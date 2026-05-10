@@ -139,7 +139,7 @@ sable-electron/
 
 Pull requests are welcome. A few notes:
 
-- **Bugs** — if the app itself misbehaves, check whether it also happens on [app.sable.chat](https://app.sable.chat) first. If it does, report it upstream to [SableClient/Sable](https://github.com/SableClient/Sable). If it only happens in this wrapper, open an issue here.
+- **Bugs** — if the app itself misbehaves, check whether it also happens on [app.sable.moe](https://app.sable.moe) first. If it does, report it upstream to [SableClient/Sable](https://github.com/SableClient/Sable). If it only happens in this wrapper, open an issue here.
 - **Platforms** — tested on NixOS / Sway (Wayland) with an old machine. Reports and fixes for Windows and macOS are welcome.
 
 ---
