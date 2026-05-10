@@ -1,0 +1,1735 @@
+import type { KeyboardEventHandler, MouseEvent, RefObject } from 'react';
+import { forwardRef, useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useAtom, useAtomValue } from 'jotai';
+import { isKeyHotkey } from 'is-hotkey';
+import type {
+  IContent,
+  MatrixEvent,
+  Room,
+  IEventRelation,
+  RoomMessageEventContent,
+  StickerEventContent,
+} from '$types/matrix-sdk';
+import { EventType, MsgType, RelationType } from '$types/matrix-sdk';
+import { ReactEditor } from 'slate-react';
+import { Editor, Point, Range, Transforms } from 'slate';
+import type { RectCords } from 'folds';
+import {
+  Box,
+  color,
+  config,
+  Dialog,
+  Icon,
+  IconButton,
+  Icons,
+  Menu,
+  MenuItem,
+  Overlay,
+  OverlayBackdrop,
+  OverlayCenter,
+  PopOut,
+  Scroll,
+  Text,
+  toRem,
+} from 'folds';
+
+import { useMatrixClient } from '$hooks/useMatrixClient';
+import type { AutocompleteQuery } from '$components/editor';
+import {
+  AutocompletePrefix,
+  createEmoticonElement,
+  CustomEditor,
+  customHtmlEqualsPlainText,
+  getAutocompleteQuery,
+  getPrevWorldRange,
+  resetEditor,
+  RoomMentionAutocomplete,
+  toMatrixCustomHTML,
+  toPlainText,
+  trimCustomHtml,
+  UserMentionAutocomplete,
+  EmoticonAutocomplete,
+  moveCursor,
+  resetEditorHistory,
+  isEmptyEditor,
+  getBeginCommand,
+  trimCommand,
+  getMentions,
+  ANYWHERE_AUTOCOMPLETE_PREFIXES,
+  BEGINNING_AUTOCOMPLETE_PREFIXES,
+  getLinks,
+  MarkdownFormattingToolbarBottom,
+  MarkdownFormattingToolbarToggle,
+  replaceWithElement,
+  BlockType,
+} from '$components/editor';
+import { plainToEditorInput } from '$components/editor/input';
+import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
+import { UseStateProvider } from '$components/UseStateProvider';
+import type { TUploadContent } from '$utils/matrix';
+import { encryptFile, getImageInfo, mxcUrlToHttp, toggleReaction } from '$utils/matrix';
+import { useTypingStatusUpdater } from '$hooks/useTypingStatusUpdater';
+import { useFilePicker } from '$hooks/useFilePicker';
+import { useFilePasteHandler } from '$hooks/useFilePasteHandler';
+import { useFileDropZone } from '$hooks/useFileDrop';
+import type { TUploadItem, TUploadMetadata, IReplyDraft } from '$state/room/roomInputDrafts';
+import {
+  roomIdToMsgDraftAtomFamily,
+  roomIdToReplyDraftAtomFamily,
+  roomIdToUploadItemsAtomFamily,
+  roomUploadAtomFamily,
+} from '$state/room/roomInputDrafts';
+import { UploadCardRenderer } from '$components/upload-card';
+import type { UploadBoardImperativeHandlers } from '$components/upload-board';
+import { UploadBoard, UploadBoardContent, UploadBoardHeader } from '$components/upload-board';
+import type { Upload, UploadSuccess } from '$state/upload';
+import { UploadStatus, createUploadFamilyObserverAtom } from '$state/upload';
+import { getImageUrlBlob, loadImageElement } from '$utils/dom';
+import { safeFile } from '$utils/mimeTypes';
+import { fulfilledPromiseSettledResult } from '$utils/common';
+import { useSetting } from '$state/hooks/settings';
+import { settingsAtom } from '$state/settings';
+import { getMentionContent, isThreadRelationEvent, reactionOrEditEvent } from '$utils/room';
+import { Command, SHRUG, TABLEFLIP, UNFLIP, useCommands } from '$hooks/useCommands';
+import { mobileOrTablet } from '$utils/user-agent';
+import { useElementSizeObserver } from '$hooks/useElementSizeObserver';
+import { Reply, ThreadIndicator } from '$components/message';
+import { roomToParentsAtom } from '$state/room/roomToParents';
+import { nicknamesAtom } from '$state/nicknames';
+import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useImagePackRooms } from '$hooks/useImagePackRooms';
+import { useComposingCheck } from '$hooks/useComposingCheck';
+import { createLogger } from '$utils/debug';
+import { createDebugLogger } from '$utils/debugLogger';
+import FocusTrap from 'focus-trap-react';
+import { useQueryClient } from '@tanstack/react-query';
+import * as Sentry from '@sentry/react';
+import {
+  delayedEventsSupportedAtom,
+  roomIdToScheduledTimeAtomFamily,
+  roomIdToEditingScheduledDelayIdAtomFamily,
+} from '$state/scheduledMessages';
+import {
+  sendDelayedMessage,
+  sendDelayedMessageE2EE,
+  computeDelayMs,
+  cancelDelayedEvent,
+} from '$utils/delayedEvents';
+import { timeHourMinute, timeDayMonthYear } from '$utils/time';
+import { stopPropagation } from '$utils/keyboard';
+
+import { usePowerLevelsContext } from '$hooks/usePowerLevels';
+import { useRoomCreators } from '$hooks/useRoomCreators';
+import { useRoomPermissions } from '$hooks/useRoomPermissions';
+import { AutocompleteNotice } from '$components/editor/autocomplete/AutocompleteNotice';
+import {
+  convertPerMessageProfileToBeeperFormat,
+  getCurrentlyUsedPerMessageProfileForRoom,
+} from '$hooks/usePerMessageProfile';
+import { Microphone, Stop } from '@phosphor-icons/react';
+import { getSupportedAudioExtension } from '$plugins/voice-recorder-kit/supportedCodec';
+import { sanitizeText } from '$utils/sanitize';
+import { PKitCommandMessageHandler } from '$plugins/pluralkit-handler/PKitCommandMessageHandler';
+import { PKitProxyMessageHandler } from '$plugins/pluralkit-handler/PKitProxyMessageHandler';
+import type { IGenericMSC4459, MSC4459ImagePackReference } from '$types/matrix/common';
+import {
+  getImagePackReferencesForMxc,
+  getImagePackReferencesForMxcWrappedInMap,
+} from '$utils/msc4459helper';
+import { ImageUsage } from '$plugins/custom-emoji';
+import { SerializableMap } from '$types/wrapper/SerializableMap';
+import { useSettingsLinkBaseUrl } from '$features/settings/useSettingsLinkBaseUrl';
+import { SchedulePickerDialog } from './schedule-send';
+import * as css from './schedule-send/SchedulePickerDialog.css';
+import {
+  getAudioMsgContent,
+  getFileMsgContent,
+  getImageMsgContent,
+  getVideoMsgContent,
+} from './msgContent';
+import { outgoingMessageTransforms } from './outgoingMessageTransforms';
+import { CommandAutocomplete } from './CommandAutocomplete';
+import type {
+  AudioMessageRecorderHandle,
+  AudioRecordingCompletePayload,
+} from './AudioMessageRecorder';
+import { AudioMessageRecorder } from './AudioMessageRecorder';
+import * as prefix from '$unstable/prefixes';
+
+// Returns the event ID of the most recent non-reaction/non-edit event in a thread,
+// falling back to the thread root if no replies exist yet.
+const getLatestThreadEventId = (room: Room, threadRootId: string): string => {
+  const thread = room.getThread(threadRootId);
+  const threadEvents: MatrixEvent[] = thread?.events ?? [];
+  const filtered = threadEvents.filter(
+    (ev) =>
+      ev.getId() !== threadRootId &&
+      !reactionOrEditEvent(ev) &&
+      isThreadRelationEvent(ev, threadRootId)
+  );
+  if (filtered.length > 0) {
+    return filtered[filtered.length - 1]!.getId() ?? threadRootId;
+  }
+  // Fall back to the live timeline if the Thread object hasn't been registered yet
+  const liveEvents = room
+    .getUnfilteredTimelineSet()
+    .getLiveTimeline()
+    .getEvents()
+    .filter(
+      (ev) =>
+        ev.getId() !== threadRootId &&
+        !reactionOrEditEvent(ev) &&
+        isThreadRelationEvent(ev, threadRootId)
+    );
+  if (liveEvents.length > 0) {
+    return liveEvents.at(-1)!.getId() ?? threadRootId;
+  }
+  return threadRootId;
+};
+
+const getReplyContent = (replyDraft: IReplyDraft | undefined, room?: Room): IEventRelation => {
+  if (!replyDraft) return {};
+
+  const relatesTo: IEventRelation = {};
+
+  // If this is a thread relation
+  if (replyDraft.relation?.rel_type === RelationType.Thread) {
+    relatesTo.event_id = replyDraft.relation.event_id;
+    relatesTo.rel_type = RelationType.Thread;
+
+    // If the user explicitly clicked "reply" on a message (including the thread root),
+    // we must set is_falling_back=false and target that message directly.
+    // (replyDraft.body being empty means it's just a seeded thread draft)
+    if (replyDraft.body) {
+      // Explicit reply — per spec, is_falling_back must be false
+      relatesTo['m.in_reply_to'] = {
+        event_id: replyDraft.eventId,
+      };
+      relatesTo.is_falling_back = false;
+    } else {
+      // Regular thread message — per spec, include fallback m.in_reply_to pointing to the
+      // most recent thread message so unthreaded clients can display it as a reply chain
+      const threadRootId = replyDraft.relation.event_id ?? replyDraft.eventId;
+      const latestEventId = room ? getLatestThreadEventId(room, threadRootId) : threadRootId;
+      relatesTo['m.in_reply_to'] = {
+        event_id: latestEventId,
+      };
+      relatesTo.is_falling_back = true;
+    }
+  } else {
+    // Regular reply (not in a thread)
+    relatesTo['m.in_reply_to'] = {
+      event_id: replyDraft.eventId,
+    };
+  }
+
+  return relatesTo;
+};
+
+const log = createLogger('RoomInput');
+const debugLog = createDebugLogger('RoomInput');
+interface ReplyEventContent {
+  'm.relates_to'?: IEventRelation;
+}
+
+const createUploadItemKey = () =>
+  globalThis.crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+interface RoomInputProps {
+  editor: Editor;
+  fileDropContainerRef: RefObject<HTMLElement>;
+  roomId: string;
+  room: Room;
+  threadRootId?: string;
+  onEditLastMessage?: () => void;
+}
+export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
+  ({ editor, fileDropContainerRef, roomId, room, threadRootId, onEditLastMessage }, ref) => {
+    // When in thread mode, isolate drafts by thread root ID so thread replies
+    // don't clobber the main room draft (and vice versa).
+    const draftKey = threadRootId ?? roomId;
+    const mx = useMatrixClient();
+    const useAuthentication = useMediaAuthentication();
+    const [enterForNewline] = useSetting(settingsAtom, 'enterForNewline');
+
+    const [hideActivity] = useSetting(settingsAtom, 'hideActivity');
+    const [mentionInReplies] = useSetting(settingsAtom, 'mentionInReplies');
+    const settingsLinkBaseUrl = useSettingsLinkBaseUrl();
+    const commands = useCommands(mx, room);
+    const imagePacksUsedRef = useRef(new SerializableMap<string, MSC4459ImagePackReference>());
+    /**
+     * handle pluralkit-style messages
+     */
+    const pluralkitCmdMessageHandler = useMemo(
+      () => new PKitCommandMessageHandler(mx, room),
+      [mx, room]
+    );
+    const pluralkitProxyMessageHandler = useMemo(() => new PKitProxyMessageHandler(mx), [mx]);
+    useEffect(() => {
+      pluralkitProxyMessageHandler.init();
+    }, [pluralkitProxyMessageHandler]);
+
+    const [pkCompatEnable] = useSetting(settingsAtom, 'pkCompat');
+    const [pmpProxyingEnable] = useSetting(settingsAtom, 'pmpProxying');
+    const emojiBtnRef = useRef<HTMLButtonElement>(null);
+    const micBtnRef = useRef<HTMLButtonElement>(null);
+    // Preserve stable list keys across metadata/description replacements without
+    // storing UI-only IDs in the upload draft state.
+    const uploadItemKeysRef = useRef(new WeakMap<TUploadContent, string>());
+    const roomToParents = useAtomValue(roomToParentsAtom);
+    /**
+     * Nickname someone set for another user
+     * this nickname should be treated as private
+     */
+    const nicknames = useAtomValue(nicknamesAtom);
+
+    const powerLevels = usePowerLevelsContext();
+    const creators = useRoomCreators(room);
+    const permissions = useRoomPermissions(creators, powerLevels);
+    const canSendReaction = permissions.event(EventType.Reaction, mx.getSafeUserId());
+
+    const [msgDraft, setMsgDraft] = useAtom(roomIdToMsgDraftAtomFamily(draftKey));
+    const [replyDraft, setReplyDraft] = useAtom(roomIdToReplyDraftAtomFamily(draftKey));
+
+    const [uploadBoard, setUploadBoard] = useState(true);
+    const [selectedFiles, setSelectedFiles] = useAtom(roomIdToUploadItemsAtomFamily(draftKey));
+    const uploadFamilyObserverAtom = createUploadFamilyObserverAtom(
+      roomUploadAtomFamily,
+      selectedFiles.map((f) => f.file)
+    );
+    const uploadBoardHandlers = useRef<UploadBoardImperativeHandlers>();
+    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isLongPress = useRef(false);
+
+    const imagePackRooms: Room[] = useImagePackRooms(roomId, roomToParents);
+
+    const [showAudioRecorder, setShowAudioRecorder] = useState(false);
+    const audioRecorderRef = useRef<AudioMessageRecorderHandle>(null);
+    const micHoldStartRef = useRef(0);
+    const HOLD_THRESHOLD_MS = 400;
+    const [autocompleteQuery, setAutocompleteQuery] =
+      useState<AutocompleteQuery<AutocompletePrefix>>();
+    const [isQuickTextReact, setQuickTextReact] = useState(false);
+
+    const sendTypingStatus = useTypingStatusUpdater(mx, roomId, { disabled: !!threadRootId });
+
+    const [inputKey, setInputKey] = useState(0);
+    const getUploadItemKey = useCallback((fileItem: TUploadItem): string => {
+      const existingKey = uploadItemKeysRef.current.get(fileItem.originalFile);
+      if (existingKey) return existingKey;
+
+      const nextKey = createUploadItemKey();
+      uploadItemKeysRef.current.set(fileItem.originalFile, nextKey);
+      return nextKey;
+    }, []);
+
+    const handleFiles = useCallback(
+      async (files: File[], audioMeta?: { waveform: number[]; audioDuration: number }) => {
+        setUploadBoard(true);
+        const safeFiles = files.map(safeFile);
+        const fileItems: TUploadItem[] = [];
+
+        if (room.hasEncryptionStateEvent()) {
+          const encryptFiles = fulfilledPromiseSettledResult(
+            await Promise.allSettled(safeFiles.map((f) => encryptFile(f)))
+          );
+          encryptFiles.forEach((ef) =>
+            fileItems.push({
+              ...ef,
+              metadata: {
+                markedAsSpoiler: false,
+                waveform: audioMeta?.waveform,
+                audioDuration: audioMeta?.audioDuration,
+              },
+            })
+          );
+        } else {
+          safeFiles.forEach((f) =>
+            fileItems.push({
+              file: f,
+              originalFile: f,
+              encInfo: undefined,
+              metadata: {
+                markedAsSpoiler: false,
+                waveform: audioMeta?.waveform,
+                audioDuration: audioMeta?.audioDuration,
+              },
+            })
+          );
+        }
+        setSelectedFiles({
+          type: 'PUT',
+          item: fileItems,
+        });
+      },
+      [setSelectedFiles, room]
+    );
+    const pickFile = useFilePicker(handleFiles, true);
+    const handlePaste = useFilePasteHandler(handleFiles);
+    const dropZoneVisible = useFileDropZone(fileDropContainerRef, handleFiles);
+    const [hideStickerBtn, setHideStickerBtn] = useState(document.body.clientWidth < 500);
+
+    const isComposing = useComposingCheck();
+
+    const queryClient = useQueryClient();
+    const delayedEventsSupported = useAtomValue(delayedEventsSupportedAtom);
+    const [scheduledTime, setScheduledTime] = useAtom(roomIdToScheduledTimeAtomFamily(roomId));
+    const [editingScheduledDelayId, setEditingScheduledDelayId] = useAtom(
+      roomIdToEditingScheduledDelayIdAtomFamily(roomId)
+    );
+    const [scheduleMenuAnchor, setScheduleMenuAnchor] = useState<RectCords>();
+    const [showSchedulePicker, setShowSchedulePicker] = useState(false);
+    const [silentReply, setSilentReply] = useState(!mentionInReplies);
+    const [hour24Clock] = useSetting(settingsAtom, 'hour24Clock');
+    const isEncrypted = room.hasEncryptionStateEvent();
+
+    useElementSizeObserver(
+      useCallback(() => fileDropContainerRef.current, [fileDropContainerRef]),
+      useCallback((width) => setHideStickerBtn(width < 500), [])
+    );
+
+    const replyEvent = replyDraft ? room.findEventById(replyDraft.eventId) : undefined;
+
+    // Seed the reply draft with the thread relation whenever we're in thread
+    // mode (e.g. on first render or when the thread root changes). We use the
+    // current user's ID as userId so that the mention logic skips it.
+    useEffect(() => {
+      if (!threadRootId) return;
+      setReplyDraft((prev) => {
+        if (
+          prev?.relation?.rel_type === RelationType.Thread &&
+          prev.relation.event_id === threadRootId
+        )
+          return prev;
+        return {
+          userId: mx.getUserId() ?? '',
+          eventId: threadRootId,
+          body: '',
+          relation: { rel_type: RelationType.Thread, event_id: threadRootId },
+        };
+      });
+    }, [threadRootId, setReplyDraft, mx]);
+
+    useEffect(() => {
+      Transforms.insertFragment(editor, msgDraft);
+    }, [editor, msgDraft]);
+
+    useEffect(
+      () => () => {
+        if (isEmptyEditor(editor)) {
+          setMsgDraft([]);
+        } else {
+          const parsedDraft = structuredClone(editor.children);
+          setMsgDraft(parsedDraft);
+        }
+        resetEditor(editor);
+        resetEditorHistory(editor);
+      },
+      [draftKey, editor, setMsgDraft]
+    );
+
+    useEffect(() => {
+      if (replyDraft !== undefined) {
+        setSilentReply(replyDraft.userId === mx.getUserId() || !mentionInReplies);
+      }
+    }, [mentionInReplies, mx, replyDraft]);
+
+    const prevReplyEventId = useRef(replyDraft?.eventId);
+    useEffect(() => {
+      if (replyDraft?.eventId !== prevReplyEventId.current) {
+        prevReplyEventId.current = replyDraft?.eventId;
+
+        if (replyDraft?.eventId) {
+          requestAnimationFrame(() => {
+            try {
+              ReactEditor.focus(editor);
+              moveCursor(editor);
+            } catch {
+              // Ignore focus errors
+            }
+          });
+        }
+      }
+    }, [replyDraft?.eventId, editor]);
+
+    const handleFileMetadata = useCallback(
+      (fileItem: TUploadItem, metadata: TUploadMetadata) => {
+        setSelectedFiles({
+          type: 'REPLACE',
+          item: fileItem,
+          replacement: { ...fileItem, metadata },
+        });
+      },
+      [setSelectedFiles]
+    );
+    const setDesc = useCallback(
+      (fileItem: TUploadItem, body: string, formatted_body: string) => {
+        setSelectedFiles({
+          type: 'REPLACE',
+          item: fileItem,
+          replacement: { ...fileItem, body, formatted_body },
+        });
+      },
+      [setSelectedFiles]
+    );
+    const handleRemoveUpload = useCallback(
+      (upload: TUploadContent | TUploadContent[]) => {
+        const uploads = Array.isArray(upload) ? upload : [upload];
+        setSelectedFiles({
+          type: 'DELETE',
+          item: selectedFiles.filter((f) => uploads.find((u) => u === f.file)),
+        });
+        uploads.forEach((u) => roomUploadAtomFamily.remove(u));
+      },
+      [setSelectedFiles, selectedFiles]
+    );
+
+    const handleAudioRecordingComplete = useCallback(
+      (payload: AudioRecordingCompletePayload) => {
+        const extension = getSupportedAudioExtension(payload.audioCodec);
+        const file = new File(
+          [payload.audioBlob],
+          `sable-audio-message-${Date.now()}.${extension}`,
+          {
+            type: payload.audioCodec,
+          }
+        );
+        handleFiles([file], {
+          waveform: payload.waveform,
+          audioDuration: payload.audioLength,
+        });
+        setShowAudioRecorder(false);
+      },
+      [handleFiles]
+    );
+
+    const audioRecorder = showAudioRecorder ? (
+      <AudioMessageRecorder
+        ref={audioRecorderRef}
+        onRequestClose={() => setShowAudioRecorder(false)}
+        onRecordingComplete={handleAudioRecordingComplete}
+        onAudioLengthUpdate={() => {}}
+        onWaveformUpdate={() => {}}
+      />
+    ) : undefined;
+
+    const handleCancelUpload = (uploads: Upload[]) => {
+      uploads.forEach((upload) => {
+        if (upload.status === UploadStatus.Loading) {
+          mx.cancelUpload(upload.promise);
+        }
+      });
+      handleRemoveUpload(uploads.map((upload) => upload.file));
+    };
+
+    const handleSendUpload = async (uploads: UploadSuccess[]) => {
+      const plainText = toPlainText(editor.children).trim();
+
+      const contentsPromises = uploads.map(async (upload) => {
+        const fileItem = selectedFiles.find((f) => f.file === upload.file);
+        if (!fileItem) throw new Error('Broken upload');
+
+        if (fileItem.file.type.startsWith('image')) {
+          return getImageMsgContent(mx, fileItem, upload.mxc);
+        }
+        if (fileItem.file.type.startsWith('video')) {
+          return getVideoMsgContent(mx, fileItem, upload.mxc);
+        }
+        if (fileItem.file.type.startsWith('audio')) {
+          return getAudioMsgContent(fileItem, upload.mxc);
+        }
+        return getFileMsgContent(fileItem, upload.mxc);
+      });
+      handleCancelUpload(uploads);
+      const contents = fulfilledPromiseSettledResult(await Promise.allSettled(contentsPromises));
+
+      /**
+       * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
+       * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
+       * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
+       */
+      const perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
+
+      if (perMessageProfile) {
+        contents.forEach((c) => {
+          // We intentionally mutate the objects here to avoid unnecessary copying
+          // mutating should be unproblematic here, since contents isn't a react component,
+          // or used for rendering
+          c[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
+            convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+        });
+      }
+
+      if (contents.length > 0) {
+        const replyContent =
+          plainText?.length === 0 ? getReplyContent(replyDraft, room) : undefined;
+        if (replyContent) contents[0]!['m.relates_to'] = replyContent;
+        if (threadRootId) {
+          setReplyDraft({
+            userId: mx.getUserId() ?? '',
+            eventId: threadRootId,
+            body: '',
+            relation: { rel_type: RelationType.Thread, event_id: threadRootId },
+          });
+        } else {
+          setReplyDraft(undefined);
+        }
+      }
+
+      const invalidate = () =>
+        queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
+
+      if (scheduledTime) {
+        try {
+          const delayMs = computeDelayMs(scheduledTime);
+          if (editingScheduledDelayId) {
+            await cancelDelayedEvent(mx, editingScheduledDelayId);
+          }
+
+          await Promise.all(
+            contents.map((content) => {
+              if (isEncrypted) {
+                return sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
+              }
+              return sendDelayedMessage(mx, roomId, content, delayMs);
+            })
+          );
+
+          invalidate();
+          setEditingScheduledDelayId(null);
+          setScheduledTime(null);
+        } catch (error) {
+          debugLog.error('message', 'Failed to schedule uploaded file message', {
+            roomId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          log.error('failed to schedule uploaded message', { roomId }, error);
+          throw error;
+        }
+      } else {
+        if (editingScheduledDelayId) {
+          try {
+            await cancelDelayedEvent(mx, editingScheduledDelayId);
+            invalidate();
+            setEditingScheduledDelayId(null);
+          } catch {
+            debugLog.error(
+              'message',
+              'Failed to cancel scheduled event before immediate file send',
+              { roomId }
+            );
+          }
+        }
+
+        await Promise.all(
+          contents.map((content) =>
+            mx
+              .sendMessage(roomId, threadRootId ?? null, content as RoomMessageEventContent)
+              .then((res: { event_id: string }) => {
+                debugLog.info('message', 'Uploaded file message sent', {
+                  roomId,
+                  eventId: res.event_id,
+                  msgtype: content.msgtype,
+                });
+                return res;
+              })
+              .catch((error: unknown) => {
+                debugLog.error('message', 'Failed to send uploaded file message', {
+                  roomId,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+                log.error('failed to send uploaded message', { roomId }, error);
+                throw error;
+              })
+          )
+        );
+      }
+    };
+
+    const handleCloseAutocomplete = useCallback(() => {
+      setAutocompleteQuery(undefined);
+      ReactEditor.focus(editor);
+    }, [editor]);
+
+    const handleQuickReact = useCallback(
+      (key: string, shortcode?: string) => {
+        if (key.length > 0) {
+          const lastMessage = room
+            .getLiveTimeline()
+            .getEvents()
+            .findLast((event) =>
+              (
+                [
+                  EventType.RoomMessage,
+                  EventType.RoomMessageEncrypted,
+                  EventType.Sticker,
+                ] as string[]
+              ).includes(event.getType())
+            );
+          const lastMessageId = lastMessage?.getId();
+
+          if (lastMessageId) {
+            toggleReaction(mx, room, lastMessageId, key, shortcode);
+          }
+        }
+
+        resetEditor(editor);
+        resetEditorHistory(editor);
+        sendTypingStatus(false);
+        handleCloseAutocomplete();
+      },
+      [editor, handleCloseAutocomplete, mx, room, sendTypingStatus]
+    );
+
+    const submit = useCallback(async () => {
+      uploadBoardHandlers.current?.handleSend();
+
+      const commandName = getBeginCommand(editor);
+      /**
+       * a map of regex patterns to replace nicknames with,
+       * used when stripNickname is true in toMatrixCustomHTML
+       * during HTML generation for the message content.
+       * This is necessary because the HTML generation needs to know
+       * which nicknames to strip in order to generate the correct formatted_body,
+       * and the plain text generation needs to replace those same nicknames with
+       * the original user IDs so that the message content remains consistent and
+       * mentions are correctly processed by the server and clients.
+       */
+      const nicknameReplacement = new Map<RegExp, string>();
+      if (replyEvent) {
+        /**
+         * the id of the user being replied to,
+         * whose nickname (if any) should be stripped
+         * from the message content and replaced with their
+         * user ID for correct mention processing
+         */
+        const senderId = replyEvent.getSender();
+        if (senderId) {
+          const nick = nicknames[senderId];
+          if (typeof nick === 'string' && nick.length > 0) {
+            nicknameReplacement.set(
+              new RegExp(`@?${nick}`, 'g'),
+              room.getMember(senderId)?.rawDisplayName ?? senderId
+            );
+          }
+        }
+      }
+      /**
+       * any other users mentioned in the message being replied to,
+       * whose nicknames should also be stripped and replaced with user IDs
+       */
+      const mentions = getMentions(mx, roomId, editor);
+      if (mentions?.users) {
+        mentions.users.forEach((id) => {
+          const nick = nicknames[id];
+          if (typeof nick === 'string' && nick.length > 0) {
+            nicknameReplacement.set(
+              new RegExp(`@?${nick}`, 'g'),
+              room.getMember(id)?.rawDisplayName ?? id
+            );
+          }
+        });
+      }
+      /**
+       * the plain text we will send
+       */
+      let serializedChildren = editor.children;
+      if (commandName) {
+        // Strip the empty text node and command node from the beginning of the first paragraph
+        const firstPara = serializedChildren[0];
+        if (
+          firstPara &&
+          'type' in firstPara &&
+          firstPara.type === BlockType.Paragraph &&
+          firstPara.children.length >= 2
+        ) {
+          serializedChildren = [
+            {
+              ...firstPara,
+              children: firstPara.children.slice(2),
+            },
+            ...serializedChildren.slice(1),
+          ];
+        }
+      }
+      const outgoingTransformContext = {
+        isMarkdown: true,
+        settingsLinkBaseUrl,
+      };
+
+      outgoingMessageTransforms.forEach((transform) => {
+        if (!transform.shouldApply(serializedChildren, outgoingTransformContext)) return;
+        serializedChildren = transform.apply(serializedChildren, outgoingTransformContext);
+      });
+
+      let plainText = toPlainText(serializedChildren, true, nicknameReplacement).trim();
+
+      /**
+       * the html we will send
+       */
+      let customHtml = trimCustomHtml(
+        toMatrixCustomHTML(serializedChildren, {
+          stripNickname: true,
+          nickNameReplacement: nicknameReplacement,
+        })
+      );
+
+      let msgType = MsgType.Text;
+
+      // quick text react
+      if (canSendReaction && plainText.startsWith('+#')) {
+        handleQuickReact(plainText.substring(2));
+        return;
+      }
+
+      // check if its a pk command
+      if (pkCompatEnable && PKitCommandMessageHandler.isPKCommand(plainText)) {
+        await pluralkitCmdMessageHandler.handleMessage(plainText);
+        resetEditor(editor); // clear the editor
+        return; // don't do anything besides handling the command
+      }
+
+      if (commandName) {
+        plainText = trimCommand(commandName, plainText);
+        customHtml = trimCommand(commandName, customHtml);
+      }
+      if (commandName === Command.Me) {
+        msgType = MsgType.Emote;
+      } else if (commandName === Command.Notice) {
+        msgType = MsgType.Notice;
+      } else if (commandName === Command.Shrug) {
+        plainText = `${SHRUG} ${plainText}`;
+        customHtml = `${SHRUG} ${customHtml}`;
+      } else if (commandName === Command.TableFlip) {
+        plainText = `${TABLEFLIP} ${plainText}`;
+        customHtml = `${TABLEFLIP} ${customHtml}`;
+      } else if (commandName === Command.UnFlip) {
+        plainText = `${UNFLIP} ${plainText}`;
+        customHtml = `${UNFLIP} ${customHtml}`;
+      } else if (commandName) {
+        const commandContent = commands[commandName as Command];
+        if (commandContent) {
+          commandContent.exe(plainText, customHtml);
+        }
+        resetEditor(editor);
+        resetEditorHistory(editor);
+        sendTypingStatus(false);
+
+        return;
+      }
+
+      if (plainText === '') return;
+
+      // PluralKit-style proxy wrappers (per-message profile proxies) must be stripped
+      // *before* building `content`, otherwise we end up sending the wrapper verbatim.
+      let proxiedPerMessageProfile:
+        | Awaited<ReturnType<(typeof pluralkitProxyMessageHandler)['getPmpBasedOnMessage']>>
+        | undefined;
+      if (pmpProxyingEnable) {
+        proxiedPerMessageProfile =
+          await pluralkitProxyMessageHandler.getPmpBasedOnMessage(plainText);
+        if (proxiedPerMessageProfile) {
+          const stripped = pluralkitProxyMessageHandler.stripProxyFromMessage(plainText);
+          if (stripped !== undefined) {
+            // Re-run the normal outgoing pipeline on the stripped content so the message
+            // goes through the same transforms/parsers as any other message.
+            serializedChildren = plainToEditorInput(stripped);
+
+            outgoingMessageTransforms.forEach((transform) => {
+              if (!transform.shouldApply(serializedChildren, outgoingTransformContext)) return;
+              serializedChildren = transform.apply(serializedChildren, outgoingTransformContext);
+            });
+
+            plainText = toPlainText(serializedChildren, true, nicknameReplacement).trim();
+            customHtml = trimCustomHtml(
+              toMatrixCustomHTML(serializedChildren, {
+                stripNickname: true,
+                nickNameReplacement: nicknameReplacement,
+              })
+            );
+          }
+        }
+      }
+
+      const body = plainText;
+      const formattedBody = customHtml;
+      const mentionData = getMentions(mx, roomId, editor);
+
+      const content: IContent & Pick<RoomMessageEventContent, 'msgtype' | 'body'> = {
+        msgtype: msgType,
+        body,
+      };
+
+      if (replyDraft && !silentReply) {
+        mentionData.users.add(replyDraft.userId);
+      }
+
+      content['m.mentions'] = getMentionContent(Array.from(mentionData.users), mentionData.room);
+      content[prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
+        imagePacksUsedRef.current.toJSON();
+
+      const links = getLinks(serializedChildren);
+      content[prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME] = [];
+      links?.forEach((link) =>
+        content[prefix.MATRIX_UNSTABLE_EMBEDDED_LINK_PREVIEW_PROPERTY_NAME].push({
+          matched_url: link,
+        })
+      );
+
+      if (replyDraft || !customHtmlEqualsPlainText(formattedBody, body)) {
+        content.format = 'org.matrix.custom.html';
+        content.formatted_body = formattedBody;
+      }
+
+      /**
+       * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
+       * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
+       * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
+       */
+      let perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
+      if (pmpProxyingEnable) {
+        if (proxiedPerMessageProfile) perMessageProfile = proxiedPerMessageProfile;
+      }
+      if (perMessageProfile) {
+        content[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
+          convertPerMessageProfileToBeeperFormat(
+            perMessageProfile,
+            perMessageProfile.name.trim() !== ''
+          );
+
+        if (perMessageProfile.name.trim() !== '') {
+          // if a per-message profile is used, it must per spec include a fallback
+          const pmpPrefix = `${perMessageProfile.name}: `;
+
+          if (!content.body.startsWith(pmpPrefix)) {
+            // to prevent double-prefixing when the fallback is already present
+            content.body = pmpPrefix + content.body;
+          }
+
+          /**
+           * html escaped version of the display name
+           */
+          const escapedName = sanitizeText(perMessageProfile.name);
+
+          const htmlPrefix = `<strong data-mx-profile-fallback>${escapedName}: </strong>`;
+
+          if (content.formatted_body && !content.formatted_body.startsWith(htmlPrefix)) {
+            content.formatted_body = htmlPrefix + content.formatted_body;
+          } else {
+            // we don't have a formatted body, but we need one
+            content.format = 'org.matrix.custom.html';
+            const escapedBody = sanitizeText(plainText).replaceAll('\n', '<br/>');
+            content.formatted_body = `${htmlPrefix}${escapedBody}`;
+          }
+        }
+      }
+
+      if (replyDraft) {
+        content['m.relates_to'] = getReplyContent(replyDraft, room);
+      }
+      const invalidate = () =>
+        queryClient.invalidateQueries({ queryKey: ['delayedEvents', roomId] });
+
+      const resetInput = () => {
+        resetEditor(editor);
+        resetEditorHistory(editor);
+        setInputKey((prev) => prev + 1);
+        imagePacksUsedRef.current.clear();
+        if (threadRootId) {
+          // Re-seed the thread reply draft so the next message also goes to the thread.
+          setReplyDraft({
+            userId: mx.getUserId() ?? '',
+            eventId: threadRootId,
+            body: '',
+            relation: { rel_type: RelationType.Thread, event_id: threadRootId },
+          });
+        } else {
+          setReplyDraft(undefined);
+        }
+        sendTypingStatus(false);
+      };
+      if (scheduledTime) {
+        try {
+          const delayMs = computeDelayMs(scheduledTime);
+          if (editingScheduledDelayId) {
+            await cancelDelayedEvent(mx, editingScheduledDelayId);
+          }
+          if (isEncrypted) {
+            await sendDelayedMessageE2EE(mx, roomId, room, content, delayMs);
+          } else {
+            await sendDelayedMessage(mx, roomId, content as RoomMessageEventContent, delayMs);
+          }
+          invalidate();
+          setEditingScheduledDelayId(null);
+          setScheduledTime(null);
+          resetInput();
+        } catch {
+          // Network/server error — leave editor and scheduled state intact for retry
+        }
+      } else if (editingScheduledDelayId) {
+        try {
+          await cancelDelayedEvent(mx, editingScheduledDelayId);
+          debugLog.info('message', 'Sending message after cancelling scheduled event', {
+            roomId,
+            scheduledDelayId: editingScheduledDelayId,
+          });
+          const res = await mx.sendMessage(
+            roomId,
+            threadRootId ?? null,
+            content as RoomMessageEventContent
+          );
+          debugLog.info('message', 'Message sent successfully', {
+            roomId,
+            eventId: res.event_id,
+          });
+          invalidate();
+          setEditingScheduledDelayId(null);
+          resetInput();
+        } catch (error) {
+          debugLog.error('message', 'Failed to send message after cancelling scheduled event', {
+            roomId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          // Cancel failed — leave state intact for retry
+        }
+      } else {
+        const msgSendStart = performance.now();
+        resetInput();
+        debugLog.info('message', 'Sending message', {
+          roomId,
+          msgtype: content.msgtype,
+        });
+        Sentry.startSpan(
+          {
+            name: 'message.send',
+            op: 'matrix.message',
+            attributes: { encrypted: String(isEncrypted) },
+          },
+          () => mx.sendMessage(roomId, threadRootId ?? null, content as RoomMessageEventContent)
+        )
+          .then((res: { event_id: string }) => {
+            debugLog.info('message', 'Message sent successfully', {
+              roomId,
+              eventId: res.event_id,
+            });
+            Sentry.metrics.distribution(
+              'sable.message.send_latency_ms',
+              performance.now() - msgSendStart,
+              { attributes: { encrypted: String(isEncrypted) } }
+            );
+          })
+          .catch((error: unknown) => {
+            debugLog.error('message', 'Failed to send message', {
+              roomId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            Sentry.metrics.count('sable.message.send_error', 1, {
+              attributes: { encrypted: String(isEncrypted) },
+            });
+            log.error('failed to send message', { roomId }, error);
+          });
+      }
+    }, [
+      editor,
+      replyEvent,
+      mx,
+      roomId,
+      canSendReaction,
+      pkCompatEnable,
+      replyDraft,
+      silentReply,
+      pmpProxyingEnable,
+      pluralkitProxyMessageHandler,
+      scheduledTime,
+      editingScheduledDelayId,
+      nicknames,
+      room,
+      handleQuickReact,
+      pluralkitCmdMessageHandler,
+      commands,
+      sendTypingStatus,
+      queryClient,
+      threadRootId,
+      setReplyDraft,
+      settingsLinkBaseUrl,
+      isEncrypted,
+      setEditingScheduledDelayId,
+      setScheduledTime,
+    ]);
+
+    const handleKeyDown: KeyboardEventHandler = useCallback(
+      (evt) => {
+        const autocompleteMenu = document.querySelector('[data-autocomplete-menu]');
+        const isMenuVisible = !!(autocompleteQuery && autocompleteMenu);
+
+        if (isMenuVisible) {
+          if (isKeyHotkey('arrowdown', evt)) {
+            evt.preventDefault();
+            autocompleteMenu.dispatchEvent(
+              new CustomEvent('autocomplete-navigate', { detail: { direction: 1 } })
+            );
+            return;
+          }
+          if (isKeyHotkey('arrowup', evt)) {
+            evt.preventDefault();
+            autocompleteMenu.dispatchEvent(
+              new CustomEvent('autocomplete-navigate', { detail: { direction: -1 } })
+            );
+            return;
+          }
+
+          if ((isKeyHotkey('enter', evt) || isKeyHotkey('tab', evt)) && !isComposing(evt)) {
+            const selectedItem =
+              autocompleteMenu.querySelector<HTMLButtonElement>('button[data-selected="true"]') ??
+              autocompleteMenu.querySelector<HTMLButtonElement>('button');
+
+            if (selectedItem) {
+              evt.preventDefault();
+              selectedItem.click();
+              return;
+            }
+          }
+        }
+
+        if (isKeyHotkey('arrowup', evt) && isEmptyEditor(editor)) {
+          const { selection } = editor;
+          if (selection && Editor.isStart(editor, selection.anchor, [])) {
+            evt.preventDefault();
+            onEditLastMessage?.();
+            return;
+          }
+        }
+
+        if (
+          (isKeyHotkey('mod+enter', evt) || (!enterForNewline && isKeyHotkey('enter', evt))) &&
+          !isComposing(evt)
+        ) {
+          evt.preventDefault();
+          submit().catch((error) => {
+            log.error('submit failed', { roomId }, error);
+          });
+          return;
+        }
+        if (isKeyHotkey('escape', evt)) {
+          evt.preventDefault();
+          if (showAudioRecorder) {
+            audioRecorderRef.current?.cancel();
+            return;
+          }
+          if (autocompleteQuery) {
+            setAutocompleteQuery(undefined);
+            return;
+          }
+          setReplyDraft(undefined);
+        }
+      },
+      [
+        submit,
+        roomId,
+        setReplyDraft,
+        enterForNewline,
+        autocompleteQuery,
+        isComposing,
+        showAudioRecorder,
+        editor,
+        onEditLastMessage,
+      ]
+    );
+
+    const handleKeyUp: KeyboardEventHandler = useCallback(
+      (evt) => {
+        if (isKeyHotkey('escape', evt)) {
+          evt.preventDefault();
+          return;
+        }
+
+        if (!hideActivity) {
+          sendTypingStatus(!isEmptyEditor(editor));
+        }
+
+        const firstPosition = Editor.start(editor, []);
+        const secondChar = Editor.after(editor, firstPosition, {
+          distance: 2,
+          unit: 'character',
+        });
+        const quickReactPrefix = Editor.string(
+          editor,
+          Editor.range(editor, firstPosition, secondChar)
+        );
+        if (quickReactPrefix === '+#') {
+          setQuickTextReact(true);
+          setAutocompleteQuery(undefined);
+          return;
+        }
+        setQuickTextReact(false);
+
+        const prevWordRange = getPrevWorldRange(editor);
+        if (!prevWordRange) {
+          setAutocompleteQuery(undefined);
+          return;
+        }
+
+        const isRangeAtBeginning = !Point.isAfter(Range.start(prevWordRange), firstPosition);
+        const query =
+          (isRangeAtBeginning
+            ? getAutocompleteQuery(editor, prevWordRange, BEGINNING_AUTOCOMPLETE_PREFIXES)
+            : undefined) ??
+          getAutocompleteQuery(editor, prevWordRange, ANYWHERE_AUTOCOMPLETE_PREFIXES);
+
+        setAutocompleteQuery(query);
+      },
+      [editor, sendTypingStatus, hideActivity]
+    );
+
+    const handleEmoticonSelect = (key: string, shortcode: string) => {
+      const emoticonEl = createEmoticonElement(key, shortcode);
+      if (autocompleteQuery) {
+        replaceWithElement(editor, autocompleteQuery.range, emoticonEl);
+      } else {
+        editor.insertNode(emoticonEl);
+      }
+      if (!imagePacksUsedRef.current.has(key)) {
+        const imgPkRef = getImagePackReferencesForMxc(key, mx, ImageUsage.Emoticon, room);
+        if (imgPkRef?.room_id && imgPkRef?.shortcode) imagePacksUsedRef.current.set(key, imgPkRef);
+      }
+      moveCursor(editor);
+      handleCloseAutocomplete();
+    };
+
+    const handleStickerSelect = async (mxc: string, shortcode: string, label: string) => {
+      const stickerUrl = mxcUrlToHttp(mx, mxc, useAuthentication);
+      if (!stickerUrl) return;
+
+      const info = getImageInfo(
+        await loadImageElement(stickerUrl),
+        await getImageUrlBlob(stickerUrl)
+      );
+
+      const content: StickerEventContent & ReplyEventContent & IContent & IGenericMSC4459 = {
+        body: label,
+        url: mxc,
+        info,
+      };
+
+      // add the image pack reference
+      content[prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
+        getImagePackReferencesForMxcWrappedInMap(mxc, mx, ImageUsage.Sticker, room);
+
+      /**
+       * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
+       * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
+       * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
+       */
+      const perMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
+
+      if (perMessageProfile) {
+        content[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
+          convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+      }
+      content[prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
+        getImagePackReferencesForMxcWrappedInMap(mxc, mx, ImageUsage.Sticker, room);
+
+      if (replyDraft) {
+        content['m.relates_to'] = getReplyContent(replyDraft, room);
+        if (threadRootId) {
+          setReplyDraft({
+            userId: mx.getUserId() ?? '',
+            eventId: threadRootId,
+            body: '',
+            relation: { rel_type: RelationType.Thread, event_id: threadRootId },
+          });
+        } else {
+          setReplyDraft(undefined);
+        }
+      }
+      mx.sendEvent(roomId, EventType.Sticker, content);
+    };
+
+    return (
+      <div ref={ref}>
+        {selectedFiles.length > 0 && (
+          <UploadBoard
+            header={
+              <UploadBoardHeader
+                open={uploadBoard}
+                onToggle={() => setUploadBoard(!uploadBoard)}
+                uploadFamilyObserverAtom={uploadFamilyObserverAtom}
+                onSend={handleSendUpload}
+                imperativeHandlerRef={uploadBoardHandlers}
+                onCancel={handleCancelUpload}
+              />
+            }
+          >
+            {uploadBoard && (
+              <Scroll size="300" hideTrack visibility="Hover">
+                <UploadBoardContent>
+                  {Array.from(selectedFiles)
+                    .toReversed()
+                    .map((fileItem) => (
+                      <UploadCardRenderer
+                        key={getUploadItemKey(fileItem)}
+                        isEncrypted={!!fileItem.encInfo}
+                        fileItem={fileItem}
+                        setMetadata={handleFileMetadata}
+                        onRemove={handleRemoveUpload}
+                        setDesc={setDesc}
+                        roomId={roomId}
+                      />
+                    ))}
+                </UploadBoardContent>
+              </Scroll>
+            )}
+          </UploadBoard>
+        )}
+        <Overlay
+          open={dropZoneVisible}
+          backdrop={<OverlayBackdrop />}
+          style={{ pointerEvents: 'none' }}
+        >
+          <OverlayCenter>
+            <Dialog variant="Primary">
+              <Box
+                direction="Column"
+                justifyContent="Center"
+                alignItems="Center"
+                gap="500"
+                style={{ padding: toRem(60) }}
+              >
+                <Icon size="600" src={Icons.File} />
+                <Text size="H4" align="Center">
+                  {`Drop Files in "${room?.name || 'Room'}"`}
+                </Text>
+                <Text align="Center">Drag and drop files here or click for selection dialog</Text>
+              </Box>
+            </Dialog>
+          </OverlayCenter>
+        </Overlay>
+        {autocompleteQuery?.prefix === AutocompletePrefix.RoomMention && (
+          <RoomMentionAutocomplete
+            roomId={roomId}
+            editor={editor}
+            query={autocompleteQuery}
+            requestClose={handleCloseAutocomplete}
+          />
+        )}
+        {autocompleteQuery?.prefix === AutocompletePrefix.UserMention && (
+          <UserMentionAutocomplete
+            room={room}
+            editor={editor}
+            query={autocompleteQuery}
+            requestClose={handleCloseAutocomplete}
+          />
+        )}
+        {autocompleteQuery?.prefix === AutocompletePrefix.Emoticon && (
+          <EmoticonAutocomplete
+            imagePackRooms={imagePackRooms}
+            editor={editor}
+            query={autocompleteQuery}
+            requestClose={handleCloseAutocomplete}
+            onEmoticonSelected={handleEmoticonSelect}
+          />
+        )}
+        {autocompleteQuery?.prefix === AutocompletePrefix.Reaction &&
+          (canSendReaction ? (
+            <EmoticonAutocomplete
+              title={`React with :${autocompleteQuery.text}`}
+              imagePackRooms={imagePackRooms}
+              editor={editor}
+              query={autocompleteQuery}
+              requestClose={handleCloseAutocomplete}
+              onEmoticonSelected={handleQuickReact}
+            />
+          ) : (
+            <AutocompleteNotice>
+              You do not have permission to send reactions in this room
+            </AutocompleteNotice>
+          ))}
+        {autocompleteQuery?.prefix === AutocompletePrefix.Command && (
+          <CommandAutocomplete
+            room={room}
+            editor={editor}
+            query={autocompleteQuery}
+            requestClose={handleCloseAutocomplete}
+          />
+        )}
+        {isQuickTextReact &&
+          (canSendReaction ? (
+            <AutocompleteNotice>Sending as text reaction to the latest message</AutocompleteNotice>
+          ) : (
+            <AutocompleteNotice>
+              You do not have permission to send reactions in this room
+            </AutocompleteNotice>
+          ))}
+        <CustomEditor
+          editableName="RoomInput"
+          editor={editor}
+          key={inputKey}
+          placeholder="Send a message..."
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
+          onPaste={handlePaste}
+          responsiveAfter={audioRecorder}
+          forceMultilineLayout={showAudioRecorder}
+          top={
+            <>
+              {scheduledTime && (
+                <div>
+                  <Box
+                    alignItems="Center"
+                    gap="300"
+                    style={{
+                      padding: `${config.space.S200} ${config.space.S300} 0`,
+                    }}
+                  >
+                    <IconButton
+                      onClick={() => {
+                        setScheduledTime(null);
+                        setEditingScheduledDelayId(null);
+                      }}
+                      variant="SurfaceVariant"
+                      size="300"
+                      radii="300"
+                      title="schedule message send"
+                    >
+                      <Icon src={Icons.Cross} size="50" />
+                    </IconButton>
+                    <Box direction="Row" gap="200" alignItems="Center">
+                      <Icon size="100" src={Icons.Clock} />
+                      <Text size="T300">
+                        Scheduled for {timeDayMonthYear(scheduledTime.getTime())} at{' '}
+                        {timeHourMinute(scheduledTime.getTime(), hour24Clock)}
+                      </Text>
+                    </Box>
+                  </Box>
+                </div>
+              )}
+              {replyDraft && (!threadRootId || replyDraft.body) && (
+                <div>
+                  <Box
+                    alignItems="Center"
+                    gap="300"
+                    style={{
+                      padding: `${config.space.S200} ${config.space.S300} 0`,
+                    }}
+                  >
+                    <IconButton
+                      onClick={() => {
+                        if (threadRootId) {
+                          setReplyDraft({
+                            userId: mx.getUserId() ?? '',
+                            eventId: threadRootId,
+                            body: '',
+                            relation: {
+                              rel_type: RelationType.Thread,
+                              event_id: threadRootId,
+                            },
+                          });
+                        } else {
+                          setReplyDraft(undefined);
+                        }
+                      }}
+                      variant="SurfaceVariant"
+                      size="300"
+                      radii="300"
+                      aria-label="Cancel reply"
+                      title="Cancel reply"
+                    >
+                      <Icon src={Icons.Cross} size="50" />
+                    </IconButton>
+                    <Box
+                      direction="Row"
+                      gap="200"
+                      alignItems="Center"
+                      grow="Yes"
+                      style={{ minWidth: 0 }}
+                    >
+                      <Box
+                        direction="Row"
+                        gap="200"
+                        alignItems="Center"
+                        grow="Yes"
+                        style={{ minWidth: 0 }}
+                      >
+                        {replyDraft.relation?.rel_type === RelationType.Thread && !threadRootId && (
+                          <ThreadIndicator />
+                        )}
+                        <Reply room={room} replyEventId={replyDraft.eventId} />
+                      </Box>
+                      <IconButton
+                        variant="SurfaceVariant"
+                        size="300"
+                        radii="300"
+                        title={
+                          silentReply ? 'Unmute reply notifications' : 'Mute reply notifications'
+                        }
+                        aria-pressed={silentReply}
+                        aria-label={
+                          silentReply ? 'Unmute reply notifications' : 'Mute reply notifications'
+                        }
+                        onClick={() => setSilentReply(!silentReply)}
+                      >
+                        {!silentReply && <Icon src={Icons.BellPing} />}
+                        {silentReply && <Icon src={Icons.BellMute} />}
+                      </IconButton>
+                    </Box>
+                  </Box>
+                </div>
+              )}
+            </>
+          }
+          before={
+            <IconButton
+              onClick={() => pickFile('*')}
+              variant="SurfaceVariant"
+              size="300"
+              radii="300"
+              title="Upload File"
+              aria-label="Upload and attach a File"
+            >
+              <Icon src={Icons.PlusCircle} />
+            </IconButton>
+          }
+          after={
+            <>
+              {/* ── Mic button — always present; icon swaps to Stop while recording ── */}
+              <IconButton
+                ref={micBtnRef}
+                variant={showAudioRecorder ? 'Critical' : 'SurfaceVariant'}
+                size="300"
+                radii="300"
+                title={showAudioRecorder ? 'Stop recording' : 'Record audio message'}
+                aria-label={showAudioRecorder ? 'Stop recording' : 'Record audio message'}
+                aria-pressed={showAudioRecorder}
+                onClick={() => {
+                  if (mobileOrTablet() && !showAudioRecorder) return;
+                  if (showAudioRecorder) {
+                    audioRecorderRef.current?.stop();
+                  } else {
+                    setShowAudioRecorder(true);
+                  }
+                }}
+                onPointerDown={() => {
+                  if (!mobileOrTablet()) return;
+                  if (showAudioRecorder) return;
+                  micHoldStartRef.current = Date.now();
+                  setShowAudioRecorder(true);
+
+                  function onUp() {
+                    cleanup();
+                    const held = Date.now() - micHoldStartRef.current;
+                    if (held >= HOLD_THRESHOLD_MS) {
+                      setTimeout(() => {
+                        audioRecorderRef.current?.stop();
+                      }, 50);
+                    } else {
+                      setTimeout(() => {
+                        audioRecorderRef.current?.cancel();
+                      }, 50);
+                    }
+                  }
+                  function cleanup() {
+                    window.removeEventListener('pointerup', onUp);
+                    window.removeEventListener('pointercancel', cleanup);
+                  }
+                  window.addEventListener('pointerup', onUp);
+                  window.addEventListener('pointercancel', cleanup);
+                }}
+              >
+                {showAudioRecorder ? (
+                  <Stop size={20} weight="fill" style={{ color: color.Critical.Main }} />
+                ) : (
+                  <Microphone size={20} />
+                )}
+              </IconButton>
+
+              <MarkdownFormattingToolbarToggle variant="SurfaceVariant" />
+
+              <UseStateProvider initial={undefined}>
+                {(emojiBoardTab: EmojiBoardTab | undefined, setEmojiBoardTab) => (
+                  <PopOut
+                    offset={16}
+                    alignOffset={-44}
+                    position="Top"
+                    align="End"
+                    anchor={
+                      emojiBoardTab === undefined
+                        ? undefined
+                        : (emojiBtnRef.current?.getBoundingClientRect() ?? undefined)
+                    }
+                    content={
+                      <EmojiBoard
+                        tab={emojiBoardTab}
+                        onTabChange={setEmojiBoardTab}
+                        imagePackRooms={imagePackRooms}
+                        returnFocusOnDeactivate={false}
+                        onEmojiSelect={handleEmoticonSelect}
+                        onCustomEmojiSelect={handleEmoticonSelect}
+                        onStickerSelect={handleStickerSelect}
+                        requestClose={() => {
+                          setEmojiBoardTab((t) => {
+                            if (t) {
+                              if (!mobileOrTablet()) ReactEditor.focus(editor);
+                              return undefined;
+                            }
+                            return t;
+                          });
+                        }}
+                      />
+                    }
+                  >
+                    {!hideStickerBtn && (
+                      <IconButton
+                        aria-pressed={emojiBoardTab === EmojiBoardTab.Sticker}
+                        onClick={() => setEmojiBoardTab(EmojiBoardTab.Sticker)}
+                        variant="SurfaceVariant"
+                        size="300"
+                        radii="300"
+                        title="open sticker picker"
+                        aria-label="Open sticker picker"
+                      >
+                        <Icon
+                          src={Icons.Sticker}
+                          filled={emojiBoardTab === EmojiBoardTab.Sticker}
+                        />
+                      </IconButton>
+                    )}
+                    <IconButton
+                      ref={emojiBtnRef}
+                      aria-pressed={
+                        hideStickerBtn ? !!emojiBoardTab : emojiBoardTab === EmojiBoardTab.Emoji
+                      }
+                      onClick={() => setEmojiBoardTab(EmojiBoardTab.Emoji)}
+                      variant="SurfaceVariant"
+                      size="300"
+                      radii="300"
+                      title="open emoji picker"
+                      aria-label="Open emoji picker"
+                    >
+                      <Icon
+                        src={Icons.Smile}
+                        filled={
+                          hideStickerBtn ? !!emojiBoardTab : emojiBoardTab === EmojiBoardTab.Emoji
+                        }
+                      />
+                    </IconButton>
+                  </PopOut>
+                )}
+              </UseStateProvider>
+              <PopOut
+                anchor={scheduleMenuAnchor}
+                position="Top"
+                align="End"
+                offset={5}
+                content={
+                  <FocusTrap
+                    focusTrapOptions={{
+                      initialFocus: false,
+                      onDeactivate: () => setScheduleMenuAnchor(undefined),
+                      clickOutsideDeactivates: true,
+                      escapeDeactivates: stopPropagation,
+                    }}
+                  >
+                    <Menu>
+                      <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
+                        <MenuItem
+                          size="300"
+                          radii="300"
+                          onClick={() => {
+                            setScheduleMenuAnchor(undefined);
+                            submit();
+                          }}
+                          before={<Icon size="100" src={Icons.Send} />}
+                        >
+                          <Text size="B300">Send Now</Text>
+                        </MenuItem>
+                        <MenuItem
+                          size="300"
+                          radii="300"
+                          onClick={() => {
+                            setScheduleMenuAnchor(undefined);
+                            setShowSchedulePicker(true);
+                          }}
+                          before={<Icon size="100" src={Icons.Clock} />}
+                        >
+                          <Text size="B300">Schedule Send</Text>
+                        </MenuItem>
+                      </Box>
+                    </Menu>
+                  </FocusTrap>
+                }
+              />
+              <Box display="Flex" alignItems="Center">
+                <IconButton
+                  title="Send Message"
+                  aria-label="Send your composed Message"
+                  onClick={() => {
+                    if (isLongPress.current) {
+                      isLongPress.current = false;
+                      return;
+                    }
+                    submit();
+                  }}
+                  onMouseDown={(e: MouseEvent) => e.preventDefault()}
+                  onPointerDown={() => {
+                    isLongPress.current = false;
+                    if (mobileOrTablet() && delayedEventsSupported) {
+                      longPressTimer.current = setTimeout(() => {
+                        isLongPress.current = true;
+                        setShowSchedulePicker(true);
+                      }, 1000);
+                    }
+                  }}
+                  onPointerUp={() => {
+                    if (longPressTimer.current !== null) {
+                      clearTimeout(longPressTimer.current);
+                      longPressTimer.current = null;
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    if (longPressTimer.current !== null) {
+                      clearTimeout(longPressTimer.current);
+                      longPressTimer.current = null;
+                    }
+                  }}
+                  variant={scheduledTime ? 'Primary' : 'SurfaceVariant'}
+                  size="300"
+                  radii="0"
+                  className={delayedEventsSupported ? css.SplitSendButton : undefined}
+                >
+                  <Icon src={scheduledTime ? Icons.Clock : Icons.Send} />
+                </IconButton>
+                {delayedEventsSupported && !mobileOrTablet() && (
+                  <IconButton
+                    onClick={(evt: MouseEvent<HTMLButtonElement>) => {
+                      setScheduleMenuAnchor(evt.currentTarget.getBoundingClientRect());
+                    }}
+                    title="Schedule Message"
+                    aria-label="Schedule message send"
+                    variant={scheduledTime ? 'Primary' : 'SurfaceVariant'}
+                    size="300"
+                    radii="0"
+                    className={css.SplitChevronButton}
+                  >
+                    <Icon size="50" src={Icons.ChevronBottom} />
+                  </IconButton>
+                )}
+              </Box>
+            </>
+          }
+          bottom={<MarkdownFormattingToolbarBottom />}
+        />
+        {showSchedulePicker && (
+          <SchedulePickerDialog
+            initialTime={scheduledTime?.getTime()}
+            showEncryptionWarning={isEncrypted}
+            onCancel={() => setShowSchedulePicker(false)}
+            onSubmit={(date) => {
+              setScheduledTime(date);
+              setShowSchedulePicker(false);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+);

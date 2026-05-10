@@ -1,0 +1,73 @@
+[package]
+versioned_files = ["package.json"]
+changelog = "CHANGELOG.md"
+extra_changelog_sections = [
+  { name = "Documentation", types = [
+    "docs",
+  ] },
+  { name = "Notes", types = [
+    "note",
+  ] },
+]
+# assets = "marker" // TODO: add this later once we have assets
+
+[changes]
+ignore_conventional_commits = true
+
+[[workflows]]
+name = "prepare-release"
+help_text = "Prepare a release PR"
+
+[[workflows.steps]]
+type = "Command"
+command = "git switch -c release"
+
+[[workflows.steps]]
+type = "PrepareRelease"
+
+[[workflows.steps]]
+type = "Command"
+command = "git commit -m \"chore: prepare release $version\""
+
+[[workflows.steps]]
+type = "Command"
+command = "git push --force --set-upstream origin release"
+
+[[workflows.steps]]
+type = "CreatePullRequest"
+base = "dev"
+
+[workflows.steps.title]
+template = "chore: prepare release $version"
+
+[workflows.steps.body]
+template = """
+> [!IMPORTANT]
+> Merging this PR will create a new release.
+
+$changelog"""
+
+[[workflows]]
+name = "release"
+help_text = "Create a GitHub release"
+
+[[workflows.steps]]
+type = "Release"
+
+[[workflows]]
+name = "document-change"
+help_text = "Create a new change file to be included in the next release"
+
+[[workflows.steps]]
+type = "CreateChangeFile"
+
+[github]
+owner = "SableClient"
+repo = "Sable"
+
+[release_notes]
+# The <!-- commit:$commit_hash --> marker is used by prepare-release.yml
+change_templates = [
+  "### $summary <!-- commit:$commit_hash -->\n\n$details",
+  "* $summary <!-- commit:$commit_hash -->",
+]

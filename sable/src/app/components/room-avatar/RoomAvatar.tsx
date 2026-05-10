@@ -1,0 +1,49 @@
+import type { JoinRule } from '$types/matrix-sdk';
+import { AvatarFallback, Icon, Icons, color } from 'folds';
+import type { ComponentProps, ReactNode } from 'react';
+import { forwardRef, useEffect, useState } from 'react';
+import { getRoomIconSrc } from '$utils/room';
+import colorMXID from '$utils/colorMXID';
+import * as css from './RoomAvatar.css';
+import { AvatarImage } from './AvatarImage';
+
+type RoomAvatarProps = {
+  roomId: string;
+  src?: string;
+  alt?: string;
+  renderFallback: () => ReactNode;
+  uniformIcons?: boolean;
+};
+
+export function RoomAvatar({ roomId, src, alt, renderFallback, uniformIcons }: RoomAvatarProps) {
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setError(false);
+  }, [src]);
+
+  if (!src || error) {
+    return (
+      <AvatarFallback
+        style={{ backgroundColor: colorMXID(roomId ?? ''), color: color.Surface.Container }}
+        className={css.RoomAvatar}
+      >
+        {renderFallback()}
+      </AvatarFallback>
+    );
+  }
+
+  return (
+    <AvatarImage src={src} alt={alt} uniformIcons={uniformIcons} onError={() => setError(true)} />
+  );
+}
+
+export const RoomIcon = forwardRef<
+  SVGSVGElement,
+  Omit<ComponentProps<typeof Icon>, 'src'> & {
+    joinRule?: JoinRule;
+    roomType?: string;
+  }
+>(({ joinRule, roomType, ...props }, ref) => (
+  <Icon src={getRoomIconSrc(Icons, roomType, joinRule)} {...props} ref={ref} />
+));

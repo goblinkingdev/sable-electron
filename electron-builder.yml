@@ -1,0 +1,76 @@
+appId: moe.sable.desktop
+productName: Sable
+copyright: "AGPL-3.0-only — Sable contributors"
+
+
+extraResources:
+  - from: sable/dist
+    to: sable-dist
+    filter:
+      - "**/*"
+
+files:
+  - dist-electron/**/*
+  - package.json
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
+    - target: rpm
+      arch:
+        - x64
+  category: Network
+  synopsis: An almost stable Matrix client
+  description: >
+    Sable Desktop is an unofficial Electron wrapper for the Sable Matrix
+    client. It bundles the Sable web app and serves it locally so you can use
+    it without a browser or a separate server.
+  icon: resources/icons
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  icon: resources/icon.icns
+  category: public.app-category.social-networking
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  contents:
+    - x: 410
+      y: 150
+      type: link
+      path: /Applications
+    - x: 130
+      y: 150
+      type: file
+
+publish:
+  provider: github
+  releaseType: release
