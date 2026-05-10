@@ -86,7 +86,7 @@
         sableSrc = pkgs.fetchFromGitHub {
           owner = "SableClient";
           repo = "Sable";
-          rev = "dev"; # pin to a commit SHA for reproducibility
+          rev = "v1.15.3";
           hash = "sha256-KxTpV1XKjeEhTJEWKdcOkEwATs1RzfoGP1vro6xHP5U=";
         };
 
@@ -155,7 +155,7 @@
             description = "Unofficial Electron desktop wrapper for Sable Matrix client";
             homepage = "https://github.com/GoblinKingDev/sable-electron";
             license = licenses.agpl3Only;
-            platforms = platforms.linux ++ platforms.darwin ++ platforms.windows;
+            platforms = platforms.linux ++ platforms.darwin;
             mainProgram = "sable-desktop";
           };
         };
