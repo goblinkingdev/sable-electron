@@ -1,0 +1,95 @@
+import { createTheme } from '@vanilla-extract/css';
+import { color } from 'folds';
+
+// just grabs values from the other files for all the legacy components yet to be updated
+const sableThemeMapping = {
+  Background: {
+    Container: 'var(--sable-bg-container)',
+    ContainerHover: 'var(--sable-bg-container-hover)',
+    ContainerActive: 'var(--sable-bg-container-active)',
+    ContainerLine: 'var(--sable-bg-container-line)',
+    OnContainer: 'var(--sable-bg-on-container)',
+  },
+  Surface: {
+    Container: 'var(--sable-surface-container)',
+    ContainerHover: 'var(--sable-surface-container-hover)',
+    ContainerActive: 'var(--sable-surface-container-active)',
+    ContainerLine: 'var(--sable-surface-container-line)',
+    OnContainer: 'var(--sable-surface-on-container)',
+  },
+  SurfaceVariant: {
+    Container: 'var(--sable-surface-var-container)',
+    ContainerHover: 'var(--sable-surface-var-container-hover)',
+    ContainerActive: 'var(--sable-surface-var-container-active)',
+    ContainerLine: 'var(--sable-surface-var-container-line)',
+    OnContainer: 'var(--sable-surface-var-on-container)',
+  },
+  Primary: {
+    Main: 'var(--sable-primary-main)',
+    MainHover: 'var(--sable-primary-main-hover)',
+    MainActive: 'var(--sable-primary-main-active)',
+    MainLine: 'var(--sable-primary-main-line)',
+    OnMain: 'var(--sable-primary-on-main)',
+    Container: 'var(--sable-primary-container)',
+    ContainerHover: 'var(--sable-primary-container-hover)',
+    ContainerActive: 'var(--sable-primary-container-active)',
+    ContainerLine: 'var(--sable-primary-container-line)',
+    OnContainer: 'var(--sable-primary-on-container)',
+  },
+  Secondary: {
+    Main: 'var(--sable-sec-main)',
+    MainHover: 'var(--sable-sec-main-hover)',
+    MainActive: 'var(--sable-sec-main-active)',
+    MainLine: 'var(--sable-sec-main-line)',
+    OnMain: 'var(--sable-sec-on-main)',
+    Container: 'var(--sable-sec-container)',
+    ContainerHover: 'var(--sable-sec-container-hover)',
+    ContainerActive: 'var(--sable-sec-container-active)',
+    ContainerLine: 'var(--sable-sec-container-line)',
+    OnContainer: 'var(--sable-sec-on-container)',
+  },
+  Success: {
+    Main: 'var(--sable-success-main)',
+    MainHover: 'var(--sable-success-main-hover)',
+    MainActive: 'var(--sable-success-main-active)',
+    MainLine: 'var(--sable-success-main-line)',
+    OnMain: 'var(--sable-success-on-main)',
+    Container: 'var(--sable-success-container)',
+    ContainerHover: 'var(--sable-success-container-hover)',
+    ContainerActive: 'var(--sable-success-container-active)',
+    ContainerLine: 'var(--sable-success-container-line)',
+    OnContainer: 'var(--sable-success-on-container)',
+  },
+  Warning: {
+    Main: 'var(--sable-warn-main)',
+    MainHover: 'var(--sable-warn-main-hover)',
+    MainActive: 'var(--sable-warn-main-active)',
+    MainLine: 'var(--sable-warn-main-line)',
+    OnMain: 'var(--sable-warn-on-main)',
+    Container: 'var(--sable-warn-container)',
+    ContainerHover: 'var(--sable-warn-container-hover)',
+    ContainerActive: 'var(--sable-warn-container-active)',
+    ContainerLine: 'var(--sable-warn-container-line)',
+    OnContainer: 'var(--sable-warn-on-container)',
+  },
+  Critical: {
+    Main: 'var(--sable-crit-main)',
+    MainHover: 'var(--sable-crit-main-hover)',
+    MainActive: 'var(--sable-crit-main-active)',
+    MainLine: 'var(--sable-crit-main-line)',
+    OnMain: 'var(--sable-crit-on-main)',
+    Container: 'var(--sable-crit-container)',
+    ContainerHover: 'var(--sable-crit-container-hover)',
+    ContainerActive: 'var(--sable-crit-container-active)',
+    ContainerLine: 'var(--sable-crit-container-line)',
+    OnContainer: 'var(--sable-crit-on-container)',
+  },
+  Other: {
+    FocusRing: 'var(--sable-focus-ring)',
+    Shadow: 'var(--sable-shadow)',
+    Overlay: 'var(--sable-overlay)',
+  },
+};
+
+export const darkTheme = createTheme(color, sableThemeMapping);
+export const lightTheme = createTheme(color, sableThemeMapping);

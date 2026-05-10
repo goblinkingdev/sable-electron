@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "Create as draft release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # needed to create GitHub releases and upload assets
+
+jobs:
+  # ── Build on each platform natively ──────────────────────────────────────
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            targets: "--linux"
+            artifact: "linux"
+          - os: windows-2022
+            targets: "--win"
+            artifact: "windows"
+          - os: macos-14          # Apple Silicon runner — can cross-build x64 too
+            targets: "--mac"
+            artifact: "macos"
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.artifact }})
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0          # needed for git describe in Sable's vite config
+
+      # ── Node / pnpm setup ──────────────────────────────────────────────
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"            # cache our wrapper's npm deps
+
+      - name: Setup pnpm (for Sable submodule)
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      # ── Build Sable web app ────────────────────────────────────────────
+      - name: Install Sable deps
+        working-directory: sable
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Sable
+        working-directory: sable
+        env:
+          # Skip Sentry upload in CI (no credentials)
+          SENTRY_AUTH_TOKEN: ""
+          SENTRY_ORG: ""
+          SENTRY_PROJECT: ""
+        run: pnpm build
+
+      # ── Build Electron wrapper ─────────────────────────────────────────
+      - name: Install wrapper deps
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run build:electron
+
+      # ── macOS code-signing (optional, skipped if secrets absent) ──────
+      - name: Import macOS certs
+        if: runner.os == 'macOS' && env.APPLE_CERT_BASE64 != ''
+        env:
+          APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          echo "$APPLE_CERT_BASE64" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -s build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+      # ── electron-builder ──────────────────────────────────────────────
+      - name: Package with electron-builder
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS notarisation (skipped if absent)
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder ${{ matrix.targets }} --publish never
+
+      # ── Upload artifacts ───────────────────────────────────────────────
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sable-desktop-${{ matrix.artifact }}
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: warn
+
+  # ── Create GitHub Release and attach all artifacts ───────────────────────
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: false
+
+      - name: List artifacts
+        run: find artifacts/ -type f | sort
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: ${{ github.event.inputs.draft == 'true' }}
+          generate_release_notes: true
+          files: artifacts/**/*
+          body: |
+            ## Sable Desktop ${{ github.ref_name }}
+
+            Unofficial Electron wrapper for [Sable](https://github.com/SableClient/Sable) Matrix client.
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | Linux (x64) | `.AppImage`, `.deb`, `.rpm` |
+            | Windows (x64) | `.exe` (NSIS installer) |
+            | macOS (Universal) | `.dmg` |
+
+            > **Note:** macOS builds are unsigned unless `APPLE_*` secrets are configured.
+            > You may need to right-click → Open the first time.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

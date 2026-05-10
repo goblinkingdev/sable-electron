@@ -1,0 +1,34 @@
+import { useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { useSetAtom } from 'jotai';
+import { activeSessionIdAtom, pendingNotificationAtom } from '$state/sessions';
+
+// ToRoomEvent handles /to/:user_id/:room_id/:event_id? — the canonical deep-link
+// URL used by the service worker's notificationclick handler.
+//
+// The :user_id segment lets the SW embed the target Matrix user ID directly in
+// the URL (e.g. %40alice%3Aserver.tld) so the correct account is always
+// activated before navigation, even on a cold launch where the app restarts
+// from scratch after the PWA was killed by the OS.
+//
+// This component does NOT navigate itself — it writes to pendingNotificationAtom
+// so NotificationJumper can navigate once the Matrix client has finished its
+// initial sync. The atom survives the ClientRoot reload that happens when
+// setActiveSessionId() triggers an account switch.
+export function ToRoomEvent() {
+  const { user_id: userId, room_id: roomId, event_id: eventId } = useParams();
+  const setActiveSessionId = useSetAtom(activeSessionIdAtom);
+  const setPending = useSetAtom(pendingNotificationAtom);
+
+  useEffect(() => {
+    if (!roomId) return;
+    // Switch to the target account first so the notification jumper navigates
+    // under the correct session.
+    if (userId) setActiveSessionId(userId);
+    setPending({ roomId, eventId, targetSessionId: userId });
+    // Replace /to/… in history so the back button doesn't return to this route.
+    window.history.replaceState({}, '', '/');
+  }, [userId, roomId, eventId, setActiveSessionId, setPending]);
+
+  return null;
+}

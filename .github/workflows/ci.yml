@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "docs/**"
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-14]
+
+    runs-on: ${{ matrix.os }}
+    name: Build check (${{ matrix.os }})
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      - name: Install Sable deps
+        working-directory: sable
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Sable
+        working-directory: sable
+        env:
+          SENTRY_AUTH_TOKEN: ""
+          SENTRY_ORG: ""
+          SENTRY_PROJECT: ""
+        run: pnpm build
+
+      - name: Install wrapper deps
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run build:electron
+
+      - name: Package (no publish)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --publish never
+        # electron-builder auto-selects platform target based on runner OS
