@@ -6,9 +6,9 @@
  * (e.g. native notifications, file-save dialogs, tray integration).
  */
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer } from "electron";
 
-contextBridge.exposeInMainWorld('sableDesktop', {
+contextBridge.exposeInMainWorld("sableDesktop", {
   platform: process.platform,
   /** Signal main process to open native file-save dialog in the future */
   // saveFile: (data: Uint8Array, name: string) => ipcRenderer.invoke('save-file', data, name),
