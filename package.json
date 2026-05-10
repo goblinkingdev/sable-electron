@@ -1,6 +1,6 @@
 {
   "name": "sable-desktop",
-  "version": "0.1.0",
+  "version": "1.0.1b",
   "description": "Unofficial Electron desktop wrapper for Sable Matrix client",
   "main": "dist-electron/main.js",
   "author": {
