@@ -4,18 +4,13 @@ import { createReadStream, existsSync, statSync } from 'fs';
 import { join, extname, normalize } from 'path';
 import { AddressInfo } from 'net';
 
-// ---------------------------------------------------------------------------
-// Paths
-// ---------------------------------------------------------------------------
-
-/**
- * In production (packaged), sable/dist is copied to resources/sable-dist by
- * electron-builder.  In development, it lives at ../../sable/dist relative to
- * this compiled file (dist-electron/main.js → project root → sable/dist).
- */
-const SABLE_DIST = app.isPackaged
-  ? join(process.resourcesPath, 'sable-dist')
-  : join(__dirname, '..', 'sable', 'dist');
+const SABLE_DIST = (() => {
+  if (app.isPackaged) return join(process.resourcesPath, 'sable-dist');
+  // nix build: dist/ sits next to dist-electron/
+  const nixDist = join(__dirname, '..', 'dist');
+  const devDist = join(__dirname, '..', 'sable', 'dist');
+  return require('fs').existsSync(join(nixDist, 'index.html')) ? nixDist : devDist;
+})();
 
 // ---------------------------------------------------------------------------
 // Minimal static file server
@@ -149,7 +144,7 @@ function buildMenu(port: number): void {
         },
         {
           label: 'Sable Desktop on GitHub',
-          click: () => shell.openExternal('https://github.com/YOUR_USERNAME/sable-desktop'),
+          click: () => shell.openExternal('https://github.com/goblinkingdev/sable-desktop'),
         },
       ],
     },

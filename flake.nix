@@ -15,20 +15,17 @@
           glib nss nspr atk at-spi2-atk at-spi2-core
           cups dbus expat libdrm pango cairo
           gtk3 gdk-pixbuf
-          mesa libgbm vulkan-loader libGL    # ← add libgbm here
+          mesa libgbm vulkan-loader libGL
           wayland libxkbcommon
-          alsa-lib libsecret
-	  udev
+          alsa-lib libsecret udev
           libx11 libxcomposite libxdamage libxext
           libxfixes libxrandr libxcb libxshmfence libxscrnsaver
         ];
+
         devShell = pkgs.mkShell {
           packages = with pkgs; [
-            nodejs_24
-            pnpm
-            git
-            patchelf 
-            rpm dpkg fakeroot 
+            nodejs_24 pnpm git patchelf
+            rpm dpkg fakeroot
           ] ++ electronLibs;
 
           shellHook = ''
@@ -44,17 +41,15 @@
             else
               echo "[sable-desktop] electron binary not found — run: npm install"
             fi
-
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath electronLibs}:/run/opengl-driver/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
           '';
         };
-        
+
         sableSrc = pkgs.fetchFromGitHub {
           owner = "SableClient";
           repo  = "Sable";
-          rev   = "dev";
-          hash  = pkgs.lib.fakeHash;
+          rev   = "dev";           # pin to a commit SHA for reproducibility
+          hash  = "sha256-KxTpV1XKjeEhTJEWKdcOkEwATs1RzfoGP1vro6xHP5U=";
         };
 
         sableWebApp = pkgs.stdenv.mkDerivation {
@@ -62,27 +57,32 @@
           version = "dev";
           src     = sableSrc;
 
-          nativeBuildInputs = with pkgs; [ nodejs_24 pnpm pnpm.configHook ];
+          nativeBuildInputs = with pkgs; [
+            nodejs_24
+            pnpm
+            pnpmConfigHook
+          ];
 
-          pnpmDeps = pkgs.pnpm.fetchDeps {
-            pname   = "sable-webapp";
-            version = "dev";
-            src     = sableSrc;
-            hash    = pkgs.lib.fakeHash;
+          pnpmDeps = pkgs.fetchPnpmDeps {
+            pname          = "sable-webapp";
+            version        = "dev";
+            src            = sableSrc;
+            fetcherVersion = 2;
+            hash           = "sha256-F3GT19uu98h5HbwNLKDTbMk7WkwTuLRCmQECs29i5pk=";
           };
 
-          buildPhase  = "runHook preBuild; pnpm build; runHook postBuild";
+          buildPhase   = "runHook preBuild; pnpm build; runHook postBuild";
           installPhase = "runHook preInstall; cp -r dist $out; runHook postInstall";
         };
 
         sableDesktop = pkgs.buildNpmPackage {
           pname   = "sable-desktop";
-          version = "0.1.0";
+          version = "1.0.0";
           src     = self;
 
-          npmDepsHash = pkgs.lib.fakeHash;
+          npmDepsHash = "sha256-5LgXHJez18yo9Z8MtBMie1P6U2PLLlO4m0q5cxK3NlM=";
 
-          nativeBuildInputs = with pkgs; [ nodejs_24 makeWrapper pkgs.electron ];
+          nativeBuildInputs = with pkgs; [ nodejs_24 makeWrapper electron ];
           buildInputs = electronLibs;
 
           env = {
@@ -101,7 +101,8 @@
           installPhase = ''
             runHook preInstall
             mkdir -p $out/lib/sable-desktop $out/bin
-            cp -r dist-electron package.json sable/dist $out/lib/sable-desktop/
+            cp -r dist-electron package.json $out/lib/sable-desktop/
+            cp -r ${sableWebApp} $out/lib/sable-desktop/dist  # ← was copying into sable/dist
             makeWrapper ${pkgs.electron}/bin/electron $out/bin/sable-desktop \
               --add-flags "$out/lib/sable-desktop" \
               --set LD_LIBRARY_PATH "${pkgs.lib.makeLibraryPath electronLibs}:/run/opengl-driver/lib"
@@ -110,17 +111,16 @@
 
           meta = with pkgs.lib; {
             description = "Unofficial Electron desktop wrapper for Sable Matrix client";
-            homepage    = "https://github.com/YOUR_USERNAME/sable-desktop";
+            homepage    = "https://github.com/GoblinKingDev/sable-electron";
             license     = licenses.agpl3Only;
-            maintainers = [];
             platforms   = platforms.linux ++ platforms.darwin ++ platforms.windows;
             mainProgram = "sable-desktop";
           };
         };
 
       in {
-        devShells.default  = devShell;
-        packages.default   = sableDesktop;
+        devShells.default      = devShell;
+        packages.default       = sableDesktop;
         packages.sable-webapp  = sableWebApp;
         packages.sable-desktop = sableDesktop;
       }
