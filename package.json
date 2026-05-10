@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Unofficial Electron desktop wrapper for Sable Matrix client",
   "main": "dist-electron/main.js",
-  "author": "",
+  "author": "goblinking_f@proton.me",
   "license": "AGPL-3.0-only",
   "private": true,
   "scripts": {
