@@ -177,7 +177,7 @@ app.whenReady().then(() => {
   const server = createServer(serveStatic);
 
   // Port 0 → OS picks a free port
-  server.listen(0, "127.0.0.1", () => {
+  server.listen(45781, "127.0.0.1", () => {
     const { port } = server.address() as AddressInfo;
     console.log(`[sable-desktop] serving on http://127.0.0.1:${port}`);
     buildMenu(port);
