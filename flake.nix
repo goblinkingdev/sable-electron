@@ -118,7 +118,7 @@
           version = "1.0.0";
           src = self;
 
-          npmDepsHash = "sha256-5LgXHJez18yo9Z8MtBMie1P6U2PLLlO4m0q5cxK3NlM=";
+          npmDepsHash = "sha256-YvNh8qkMiGTQ44s2Iv8SBHoJckn2d45ESBqQUPNhKO8="; 
 
           nativeBuildInputs = with pkgs; [
             nodejs_24

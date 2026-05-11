@@ -122,65 +122,13 @@ function createWindow(port: number): void {
   });
 }
 
-function buildMenu(port: number): void {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: "Sable",
-      submenu: [
-        {
-          label: "Reload",
-          accelerator: "CmdOrCtrl+R",
-          click: () => mainWindow?.reload(),
-        },
-        {
-          label: "Force Reload",
-          accelerator: "CmdOrCtrl+Shift+R",
-          click: () => mainWindow?.webContents.reloadIgnoringCache(),
-        },
-        { type: "separator" },
-        {
-          label: "Toggle DevTools",
-          accelerator: "F12",
-          click: () => mainWindow?.webContents.toggleDevTools(),
-        },
-        { type: "separator" },
-        { role: "quit" },
-      ],
-    },
-    { role: "editMenu" },
-    { role: "viewMenu" },
-    { role: "windowMenu" },
-    {
-      label: "Help",
-      submenu: [
-        {
-          label: "Sable on GitHub",
-          click: () =>
-            shell.openExternal("https://github.com/SableClient/Sable"),
-        },
-        {
-          label: "Sable Desktop on GitHub",
-          click: () =>
-            shell.openExternal(
-              "https://github.com/goblinkingdev/sable-desktop",
-            ),
-        },
-      ],
-    },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-  // suppress unused warning
-  void port;
-}
-
 app.whenReady().then(() => {
   const server = createServer(serveStatic);
 
-  // Port 0 → OS picks a free port
   server.listen(45781, "127.0.0.1", () => {
     const { port } = server.address() as AddressInfo;
     console.log(`[sable-desktop] serving on http://127.0.0.1:${port}`);
-    buildMenu(port);
+    Menu.setApplicationMenu(null);
     createWindow(port);
   });
 
