@@ -115,7 +115,7 @@
 
         sableDesktop = pkgs.buildNpmPackage {
           pname = "sable-desktop";
-          version = "1.0.0";
+          version = "1.0.3";
           src = self;
 
           npmDepsHash = "sha256-YvNh8qkMiGTQ44s2Iv8SBHoJckn2d45ESBqQUPNhKO8="; 
