@@ -86,7 +86,7 @@
         sableSrc = pkgs.fetchFromGitHub {
           owner = "SableClient";
           repo = "Sable";
-          rev = "v1.15.3";
+          rev = "v1.16.0";
           hash = "sha256-KxTpV1XKjeEhTJEWKdcOkEwATs1RzfoGP1vro6xHP5U=";
         };
 
@@ -115,7 +115,7 @@
 
         sableDesktop = pkgs.buildNpmPackage {
           pname = "sable-desktop";
-          version = "1.0.0";
+          version = "1.0.3-1.16.0";
           src = self;
 
           npmDepsHash = "sha256-YvNh8qkMiGTQ44s2Iv8SBHoJckn2d45ESBqQUPNhKO8="; 
