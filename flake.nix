@@ -86,8 +86,8 @@
         sableSrc = pkgs.fetchFromGitHub {
           owner = "SableClient";
           repo = "Sable";
-          rev = "v1.16.0";
-          hash = "sha256-KxTpV1XKjeEhTJEWKdcOkEwATs1RzfoGP1vro6xHP5U=";
+          rev = "v1.16.1";
+          hash = "sha256-4CJ9a6EUtT70G6iWnaaSlC3DWqF1zQrkeH9PTu8xyC8="; 
         };
 
         sableWebApp = pkgs.stdenv.mkDerivation {
@@ -115,10 +115,10 @@
 
         sableDesktop = pkgs.buildNpmPackage {
           pname = "sable-desktop";
-          version = "1.0.3-1.16.0";
+          version = "1.0.3-1.16.1";
           src = self;
 
-          npmDepsHash = "sha256-YvNh8qkMiGTQ44s2Iv8SBHoJckn2d45ESBqQUPNhKO8="; 
+          npmDepsHash = "sha256-GQjnwhPhdqIP9AfW9XOfv0cT3aytgg+fnFDVPr8Tsho="; 
 
           nativeBuildInputs = with pkgs; [
             nodejs_24
