@@ -118,7 +118,7 @@
           version = "1.0.3-1.17.0";
           src = self;
 
-          npmDepsHash = "sha256-GQjnwhPhdqIP9AfW9XOfv0cT3aytgg+fnFDVPr8Tsho="; 
+          npmDepsHash = "sha256-SFAPzyofklcG/eAxuHIY2wV5P3FqJd1kFx/E8e2DpSA="; 
 
           nativeBuildInputs = with pkgs; [
             nodejs_24
@@ -144,6 +144,7 @@
             runHook preInstall
             mkdir -p $out/lib/sable-desktop $out/bin
             cp -r dist-electron package.json $out/lib/sable-desktop/
+	    cp -r node_modules $out/lib/sable-desktop/node_modules
             cp -r ${sableWebApp} $out/lib/sable-desktop/dist  # ← was copying into sable/dist
             makeWrapper ${pkgs.electron}/bin/electron $out/bin/sable-desktop \
               --add-flags "$out/lib/sable-desktop" \
