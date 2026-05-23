@@ -18,7 +18,7 @@ import {
 } from 'folds';
 import { isKeyHotkey } from 'is-hotkey';
 
-import { SettingMenuSelector } from '$components/setting-menu-selector';
+import { SettingMenuSelector, type SettingMenuOption } from '$components/setting-menu-selector';
 import { SequenceCard } from '$components/sequence-card';
 import { SettingTile } from '$components/setting-tile';
 import {
@@ -29,7 +29,7 @@ import {
 } from '$plugins/arborium';
 import { ThemeKind, useActiveTheme } from '$hooks/useTheme';
 import { useSetting } from '$state/hooks/settings';
-import type { ShowRoomIcon } from '$state/settings';
+import type { PixelatedImageRenderingMode, ShowRoomIcon } from '$state/settings';
 import { settingsAtom } from '$state/settings';
 import { SequenceCardStyle } from '$features/settings/styles.css';
 import { ThemeAppearanceSection } from './ThemeAppearanceSection';
@@ -38,6 +38,7 @@ import FocusTrap from 'focus-trap-react';
 import { useShowRoomIcon } from '$hooks/useShowRoomIcon';
 import type { PanelSizetItem } from '$hooks/usePanelSizes';
 import { usePanelSizeItems } from '$hooks/usePanelSizes';
+import { SelectShowPerRoomRoomIcon } from '$features/common-settings/appearance/Appearance';
 
 const clampIncomingInlineImageHeight = (n: number) => Math.max(1, Math.min(4096, n));
 
@@ -216,6 +217,16 @@ function ThemeVisualPreferences() {
   const [autoplayGifs, setAutoplayGifs] = useSetting(settingsAtom, 'autoplayGifs');
   const [autoplayStickers, setAutoplayStickers] = useSetting(settingsAtom, 'autoplayStickers');
   const [autoplayEmojis, setAutoplayEmojis] = useSetting(settingsAtom, 'autoplayEmojis');
+  const [pixelatedImageRendering, setPixelatedImageRendering] = useSetting(
+    settingsAtom,
+    'pixelatedImageRendering'
+  );
+  const pixelatedImageRenderingOptions: SettingMenuOption<PixelatedImageRenderingMode>[] = [
+    { value: 'both', label: 'Both' },
+    { value: 'chat', label: 'Chat' },
+    { value: 'viewer', label: 'Image viewer' },
+    { value: 'none', label: 'Neither' },
+  ];
   const [incomingInlineImagesDefaultHeight, setIncomingInlineImagesDefaultHeight] = useSetting(
     settingsAtom,
     'incomingInlineImagesDefaultHeight'
@@ -325,6 +336,20 @@ function ThemeVisualPreferences() {
           focusId="autoplay-gifs"
           description="Automatically play animated image uploads and links."
           after={<Switch variant="Primary" value={autoplayGifs} onChange={setAutoplayGifs} />}
+        />
+      </SequenceCard>
+      <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+        <SettingTile
+          title="Pixelated image scaling"
+          focusId="pixelated-image-rendering"
+          description="Use crisp nearest-neighbor scaling where selected. Improves pixel art but makes normal images worse."
+          after={
+            <SettingMenuSelector
+              value={pixelatedImageRendering}
+              options={pixelatedImageRenderingOptions}
+              onSelect={setPixelatedImageRendering}
+            />
+          }
         />
       </SequenceCard>
       <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
@@ -717,7 +742,8 @@ function SelectShowRoomIcon() {
     setMenuCords(evt.currentTarget.getBoundingClientRect());
   };
 
-  const handleSelect = (position: ShowRoomIcon) => {
+  const handleSelect = (position?: ShowRoomIcon) => {
+    if (!position) return;
     setShowRoomIcon(position);
     setMenuCords(undefined);
   };
@@ -868,10 +894,20 @@ export function Appearance({
 
             <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
               <SettingTile
-                title="Show Room Icons"
+                title="Show Room Icons In Sidebars"
                 focusId="show-room-icons"
                 description="When do you want to show the specific room icons in the sidebar as opposed to the default room icons?"
                 after={<SelectShowRoomIcon />}
+              />
+            </SequenceCard>
+            {/*THIS SHOULD BE MOVED TO A NEW SETTINGS MENU INSIDE OF THE HOME SETTINGS AS SOON AS THERE IS A REASON TO CREATE A HOME MENU SETTINGS PANEL
+              it is currently here because it would be eerie to have an entire home settings menu for just one single setting*/}
+            <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
+              <SettingTile
+                title="Show Room Icons In Home menu sidebar"
+                focusId="show-room-home-icons"
+                description="Show Room icons in the home menu? (overrides setting above if set)"
+                after={<SelectShowPerRoomRoomIcon roomId={'Home'} />}
               />
             </SequenceCard>
 
