@@ -1,8 +1,9 @@
-import { app, BrowserWindow, shell, Menu } from "electron";
+import { app, BrowserWindow, shell, Menu, dialog } from "electron";
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { createReadStream, existsSync, statSync } from "fs";
 import { join, extname, normalize } from "path";
 import { AddressInfo } from "net";
+import { autoUpdater, UpdateInfo, ProgressInfo } from "electron-updater";
 
 const SABLE_DIST = (() => {
   if (app.isPackaged) return join(process.resourcesPath, "sable-dist");
@@ -13,6 +14,73 @@ const SABLE_DIST = (() => {
     ? nixDist
     : devDist;
 })();
+
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.allowDowngrade = false;
+
+async function checkForUpdates(): Promise<void> {
+  if (!app.isPackaged) {
+    console.log("[auto-updater] Skipping update check in development mode");
+    return;
+  }
+
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    console.error("[auto-updater] Update check failed:", error);
+  }
+}
+
+function setupPeriodicUpdateChecks(): void {
+  const CHECK_INTERVAL = 12 * 60 * 60 * 1000;
+  setInterval(() => {
+    if (app.isPackaged) {
+      checkForUpdates();
+    }
+  }, CHECK_INTERVAL);
+}
+
+function setupAutoUpdaterEvents(mainWindow: BrowserWindow): void {
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[auto-updater] Checking for updates...");
+  });
+
+  autoUpdater.on("update-available", (info: UpdateInfo) => {
+    console.log(`[auto-updater] Update available: ${info.version}`);
+  });
+
+  autoUpdater.on("update-not-available", (info: UpdateInfo) => {
+    console.log(`[auto-updater] Update not available, current version: ${info.version}`);
+  });
+
+  autoUpdater.on("download-progress", (progressObj: ProgressInfo) => {
+    console.log(
+      `[auto-updater] Download progress: ${progressObj.percent.toFixed(1)}%`
+    );
+  });
+
+  autoUpdater.on("update-downloaded", (info: UpdateInfo) => {
+    console.log(`[auto-updater] Update downloaded: ${info.version}`);
+    dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: "Update Available",
+      message: "A new version of Sable has been downloaded. Restart the application to install.",
+      detail: `Version ${info.version} is ready to install.`,
+      buttons: ["Restart Now", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    }).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on("error", (error: Error) => {
+    console.error("[auto-updater] Update error:", error);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Minimal static file server
@@ -138,6 +206,11 @@ app.whenReady().then(() => {
       createWindow(addr.port);
     }
   });
+  if (mainWindow) {
+    setupAutoUpdaterEvents(mainWindow);
+    checkForUpdates();
+    setupPeriodicUpdateChecks();
+  }
 });
 
 app.on("window-all-closed", () => {
