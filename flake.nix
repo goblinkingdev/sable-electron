@@ -105,8 +105,8 @@
             pname = "sable-webapp";
             version = "dev";
             src = sableSrc;
-            fetcherVersion = 2;
-            hash = "sha256-F3GT19uu98h5HbwNLKDTbMk7WkwTuLRCmQECs29i5pk=";
+            fetcherVersion = 3;
+            hash = "sha256-DlWFD0AJp/KD15SU8/1L0RAj7J+66zY8hwiu19AlO0I=";
           };
 
           buildPhase = "runHook preBuild; pnpm build; runHook postBuild";
@@ -115,7 +115,7 @@
 
         sableDesktop = pkgs.buildNpmPackage {
           pname = "sable-desktop";
-          version = "1.0.3-1.17.0";
+          version = "1.0.5-1.17.0";
           src = self;
 
           npmDepsHash = "sha256-SFAPzyofklcG/eAxuHIY2wV5P3FqJd1kFx/E8e2DpSA="; 
@@ -145,8 +145,8 @@
             mkdir -p $out/lib/sable-desktop $out/bin
             cp -r dist-electron package.json $out/lib/sable-desktop/
 	    cp -r node_modules $out/lib/sable-desktop/node_modules
-            cp -r ${sableWebApp} $out/lib/sable-desktop/dist  # ← was copying into sable/dist
-            makeWrapper ${pkgs.electron}/bin/electron $out/bin/sable-desktop \
+            cp -r ${sableWebApp} $out/lib/sable-desktop/dist 
+	    makeWrapper ${pkgs.electron}/bin/electron $out/bin/sable-desktop \
               --add-flags "$out/lib/sable-desktop" \
               --set LD_LIBRARY_PATH "${pkgs.lib.makeLibraryPath electronLibs}:/run/opengl-driver/lib"
             runHook postInstall
