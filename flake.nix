@@ -156,10 +156,10 @@ YAMLEOF
 
         sableDesktop = pkgs.buildNpmPackage {
           pname = "sable-desktop";
-          version = "1.0.5-1.18.3";
+          version = "1.0.6-1.18.3";
           src = self;
 
-          npmDepsHash = "sha256-x+QLU5byWDDO5ATyGlNRuRgnA07zF9SMrJn83DAqmW8="; 
+          npmDepsHash = "sha256-cMLUCqpNbREXLJ0muuU6kgM5RdSnFk5cPhToXEUo+iQ="; 
 
           nativeBuildInputs = with pkgs; [
             nodejs_24
