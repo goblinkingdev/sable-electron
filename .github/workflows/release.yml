@@ -92,6 +92,49 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder ${{ matrix.targets }} --publish never
 
+      - name: Assemble Arch Linux binary tarball
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p arch-pkg/usr/bin
+          cp -ar dist-electron arch-pkg/usr/lib/sable-desktop/
+          cp -ar node_modules arch-pkg/usr/lib/sable-desktop/
+          cp -ar resources arch-pkg/usr/lib/sable-desktop/
+          cp -a sable/dist arch-pkg/usr/lib/sable-desktop/
+          cp package.json arch-pkg/usr/lib/sable-desktop/
+          cat > arch-pkg/usr/bin/sable-desktop << 'SHEOF'
+          #!/bin/sh
+          exec /usr/bin/electron /usr/lib/sable-desktop "$@"
+          SHEOF
+          chmod 755 arch-pkg/usr/bin/sable-desktop
+          install -Dm644 resources/logo.svg \
+            arch-pkg/usr/share/icons/hicolor/scalable/apps/sable-desktop.svg
+          install -Dm644 resources/icons/256x256.png \
+            arch-pkg/usr/share/icons/hicolor/256x256/apps/sable-desktop.png
+          install -Dm644 resources/icons/48x48.png \
+            arch-pkg/usr/share/icons/hicolor/48x48/apps/sable-desktop.png
+          install -Dm644 /dev/stdin \
+            arch-pkg/usr/share/applications/sable-desktop.desktop << 'DESKTOPFILE'
+          [Desktop Entry]
+          Name=Sable Desktop
+          Comment=Unofficial Electron desktop wrapper for Sable Matrix client
+          Exec=/usr/bin/sable-desktop
+          Icon=sable-desktop
+          Terminal=false
+          Type=Application
+          Categories=Network;InstantMessaging;Chat;
+          StartupWMClass=Sable
+          MimeType=x-scheme-handler/matrix;
+          DESKTOPFILE
+          cp LICENSE arch-pkg/usr/share/licenses/sable-desktop/
+          cd arch-pkg && tar czf "../sable-desktop-archlinux-${GITHUB_REF_NAME#v}.tar.gz" .
+
+      - name: Upload Arch Linux tarball
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sable-desktop-archlinux
+          path: sable-desktop-archlinux-*.tar.gz
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -137,7 +180,7 @@ jobs:
             ### Downloads
             | Platform | File |
             |----------|------|
-            | Linux (x64) | `.AppImage`, `.deb`, `.rpm` |
+            | Linux (x64) | `.AppImage`, `.deb`, `.rpm`, `.tar.gz` (Arch Linux) |
             | Windows (x64) | `.exe` (NSIS installer) |
             | macOS (Universal) | `.dmg` |
 
