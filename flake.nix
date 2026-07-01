@@ -86,14 +86,55 @@
         sableSrc = pkgs.fetchFromGitHub {
           owner = "SableClient";
           repo = "Sable";
-          rev = "v1.17.0";
-          hash = "sha256-hWh/xfyuEQTjqf/k5HJ32wFdOHRWXWqAh6q1pdk4Ih4="; 
+          rev = "v1.18.3";
+          hash = "sha256-yi70WBH0lDw1h4Oy6NNfi71kp32be3rtZDt3/C2e524="; 
         };
+
+        sableSrcPatched = pkgs.runCommand "sable-src-patched" {
+          buildInputs = [ pkgs.jq ];
+        } ''
+          cp -r ${sableSrc} $out
+          chmod -R +w $out
+
+          # Remove old-style pnpm config from package.json (pnpm 11 ignores it anyway)
+          ${pkgs.jq}/bin/jq 'del(.pnpm)' $out/package.json > $out/package.json.tmp
+          mv $out/package.json.tmp $out/package.json
+
+          # Sync overrides to match what's in the lockfile (jsdom>undici only).
+          # The upstream pnpm-workspace.yaml has 8 overrides that don't match the lockfile,
+          # causing pnpm --frozen-lockfile to fail with LOCKFILE_CONFIG_MISMATCH.
+          cat > $out/pnpm-workspace.yaml << 'YAMLEOF'
+allowBuilds:
+  '@sentry/cli': true
+  '@swc/core': true
+  cloudflared: true
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  workerd: true
+engineStrict: true
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - '@sableclient/sable-call-embedded'
+  - '@sableclient/twemoji-font'
+
+overrides:
+  jsdom>undici: '^7.28.0'
+
+peerDependencyRules:
+  allowedVersions:
+    'folds>@vanilla-extract/css': '1.18.0'
+    'folds>@vanilla-extract/recipes': '0.5.7'
+    'folds>classnames': '2.5.1'
+    'folds>react': '18.3.1'
+    'folds>react-dom': '18.3.1'
+YAMLEOF
+        '';
 
         sableWebApp = pkgs.stdenv.mkDerivation {
           pname = "sable-webapp";
           version = "dev";
-          src = sableSrc;
+          src = sableSrcPatched;
 
           nativeBuildInputs = with pkgs; [
             nodejs_24
@@ -104,21 +145,21 @@
           pnpmDeps = pkgs.fetchPnpmDeps {
             pname = "sable-webapp";
             version = "dev";
-            src = sableSrc;
+            src = sableSrcPatched;
             fetcherVersion = 3;
-            hash = "sha256-DlWFD0AJp/KD15SU8/1L0RAj7J+66zY8hwiu19AlO0I=";
+            hash = "sha256-aAPKakgGzuSHsu7lc1XJ6eyudodgWbqPR7PhL4lLqVw=";
           };
 
-          buildPhase = "runHook preBuild; pnpm build; runHook postBuild";
+          buildPhase = "runHook preBuild; NODE_OPTIONS='--max-old-space-size=8192' pnpm build; runHook postBuild";
           installPhase = "runHook preInstall; cp -r dist $out; runHook postInstall";
         };
 
         sableDesktop = pkgs.buildNpmPackage {
           pname = "sable-desktop";
-          version = "1.0.5-1.17.0";
+          version = "1.0.5-1.18.3";
           src = self;
 
-          npmDepsHash = "sha256-SFAPzyofklcG/eAxuHIY2wV5P3FqJd1kFx/E8e2DpSA="; 
+          npmDepsHash = "sha256-x+QLU5byWDDO5ATyGlNRuRgnA07zF9SMrJn83DAqmW8="; 
 
           nativeBuildInputs = with pkgs; [
             nodejs_24
