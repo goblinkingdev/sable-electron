@@ -187,6 +187,7 @@ YAMLEOF
             cp -r dist-electron package.json $out/lib/sable-desktop/
 	    cp -r node_modules $out/lib/sable-desktop/node_modules
             cp -r ${sableWebApp} $out/lib/sable-desktop/dist 
+            cp -r resources $out/lib/sable-desktop/resources
 	    makeWrapper ${pkgs.electron}/bin/electron $out/bin/sable-desktop \
               --add-flags "$out/lib/sable-desktop" \
               --set LD_LIBRARY_PATH "${pkgs.lib.makeLibraryPath electronLibs}:/run/opengl-driver/lib"

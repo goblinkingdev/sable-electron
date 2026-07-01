@@ -8,6 +8,10 @@ extraResources:
     to: sable-dist
     filter:
       - "**/*"
+  - from: resources
+    to: resources
+    filter:
+      - "**/*"
 
 files:
   - dist-electron/**/*

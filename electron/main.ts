@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Menu, dialog, session, desktopCapturer } from "electron";
+import { app, BrowserWindow, shell, Menu, dialog, session, desktopCapturer, nativeImage } from "electron";
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { createReadStream, existsSync, statSync } from "fs";
 import { join, extname, normalize } from "path";
@@ -16,6 +16,11 @@ const SABLE_DIST = (() => {
   return require("fs").existsSync(join(nixDist, "index.html"))
     ? nixDist
     : devDist;
+})();
+
+const APP_ICON = (() => {
+  if (app.isPackaged) return join(process.resourcesPath, "resources", "icon.png");
+  return join(__dirname, "..", "resources", "icon.png");
 })();
 
 autoUpdater.autoDownload = true;
@@ -242,12 +247,15 @@ function setupWidgetSupport(): void {
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(port: number): void {
+  const iconPath = existsSync(APP_ICON) ? APP_ICON : undefined;
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 600,
     minHeight: 400,
     title: "Sable",
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -258,6 +266,11 @@ function createWindow(port: number): void {
   });
 
   mainWindow.loadURL(`http://localhost:${port}`);
+
+  // Set macOS dock icon
+  if (process.platform === "darwin" && iconPath) {
+    app.dock?.setIcon(nativeImage.createFromPath(iconPath));
+  }
 
   mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDesc, validatedURL) => {
     console.log(`\n[load-fail] Error ${errorCode}: ${errorDesc}`);
