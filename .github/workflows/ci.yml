@@ -43,6 +43,7 @@ jobs:
           SENTRY_AUTH_TOKEN: ""
           SENTRY_ORG: ""
           SENTRY_PROJECT: ""
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: pnpm build
 
       - name: Install wrapper deps
