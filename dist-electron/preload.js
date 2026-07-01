@@ -8,7 +8,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
-electron_1.contextBridge.exposeInMainWorld('sableDesktop', {
+electron_1.contextBridge.exposeInMainWorld("sableDesktop", {
     platform: process.platform,
     /** Signal main process to open native file-save dialog in the future */
     // saveFile: (data: Uint8Array, name: string) => ipcRenderer.invoke('save-file', data, name),
