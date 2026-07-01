@@ -95,7 +95,7 @@ jobs:
       - name: Assemble Arch Linux binary tarball
         if: runner.os == 'Linux'
         run: |
-          mkdir -p arch-pkg/usr/lib/sable-desktop arch-pkg/usr/bin
+          mkdir -p arch-pkg/usr/lib/sable-desktop arch-pkg/usr/bin arch-pkg/usr/share/licenses/sable-desktop
           cp -ar dist-electron arch-pkg/usr/lib/sable-desktop/
           cp -ar node_modules arch-pkg/usr/lib/sable-desktop/
           cp -ar resources arch-pkg/usr/lib/sable-desktop/
